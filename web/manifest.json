@@ -1,11 +1,11 @@
 {
-    "name": "flutter_audio_service_demo",
-    "short_name": "flutter_audio_service_demo",
+    "name": "Vasis Beats",
+    "short_name": "Vasis Beats",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#ffffff",
+    "theme_color": "#7618c0",
+    "description": "Practice kirtan rhythms with Vasis Studio.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

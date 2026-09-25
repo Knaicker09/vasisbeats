@@ -1,274 +1,191 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'page_manager.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:phone_form_field/phone_form_field.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'app_nav.dart';
 import 'services/service_locator.dart';
-import 'package:catcher/catcher.dart';
+import 'services/db_bootstrap.dart';
+import 'services/download_manager.dart';
+import 'services/error_log_service.dart';
+import 'services/offline_cache_service.dart';
+import 'services/practice_controller.dart';
 
-import 'package:provider/provider.dart';
-import 'package:flutter/foundation.dart';
+import 'platform_support.dart';
+import 'screens/auth/login_screen.dart';
+import 'screens/main_shell.dart';
+import 'ui/brand.dart';
 
-import 'package:firebase_auth/firebase_auth.dart';
-import 'screens/sign_in_screen.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'firebase_options.dart';
-import 'dart:io' show Platform, exit;
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:app_links/app_links.dart';
+/// Global navigator key, used for navigation/snackbars from places
+/// (deep-link callbacks) that don't have a BuildContext of their own.
+final navigatorKey = GlobalKey<NavigatorState>();
+
+const String _errorReportEmail = 'namelestek@gmail.com';
+const String _appName = 'Vasis Beats';
+
+String _truncate(String value, int maxLength) =>
+    value.length <= maxLength ? value : value.substring(0, maxLength);
+
+/// Best-effort first non-empty stack frame, for a quick-glance summary on
+/// top of the full raw stack trace included further down the report.
+/// Mirrors `firstStackFrame` in the website's lib/errorReporting.ts.
+String? _firstStackFrame(String stack) {
+  final lines = stack.split('\n');
+  for (final line in lines.skip(1)) {
+    final trimmed = line.trim();
+    if (trimmed.isNotEmpty) return trimmed;
+  }
+  return null;
+}
+
+/// Logs an uncaught error to the console and opens a pre-filled email
+/// report (via the device's mail client) addressed to [_errorReportEmail].
+/// Field set mirrors the website's dev-alert email (lib/errorReporting.ts):
+/// app, source, affected user, timestamp, error name/message, first stack
+/// frame, and the full stack trace.
+Future<void> _reportError(
+  Object error,
+  StackTrace stack, {
+  String source = 'zone-error',
+}) async {
+  debugPrint('❌ Uncaught error ($source): $error');
+  debugPrint(stack.toString());
+
+  try {
+    final userEmail =
+        Supabase.instance.client.auth.currentUser?.email ?? '(not logged in / unknown)';
+    final timestamp = DateTime.now().toUtc().toIso8601String();
+    final errorName = error.runtimeType.toString();
+    final message = error.toString();
+    final stackString = stack.toString();
+    final frame = _firstStackFrame(stackString);
+
+    final subject = _truncate('[$_appName] $source error: $message', 200);
+
+    final bodyLines = <String>[
+      'App: $_appName',
+      'Source: $source',
+      'Affected user: $userEmail',
+      'Platform: $platformName',
+      'Timestamp: $timestamp',
+      'Error name: $errorName',
+      'Error message: $message',
+      if (frame != null) 'Location (first frame): $frame',
+      '',
+      'Stack trace:',
+      stackString,
+    ];
+
+    final reportUri = Uri(
+      scheme: 'mailto',
+      path: _errorReportEmail,
+      query:
+          'subject=${Uri.encodeComponent(subject)}&body=${Uri.encodeComponent(bodyLines.join('\n'))}',
+    );
+    if (await canLaunchUrl(reportUri)) {
+      await launchUrl(reportUri, mode: LaunchMode.externalApplication);
+    }
+  } catch (e) {
+    // Never let error reporting itself crash the app.
+    debugPrint('Failed to open error report email: $e');
+  }
+}
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
 
-  // Load environment variables
-  try {
-    await dotenv.load(fileName: ".env");
-  } catch (e) {
-    debugPrint('Error loading .env file: $e');
-    // In production, you might want to handle this differently
-    // For now, we'll just print the error and continue
-  }
-
-  if (Firebase.apps.isEmpty) {
-    try {
-      if (Platform.isMacOS || Platform.isIOS) {
-        await Firebase.initializeApp(); // auto-loads from plist
-      } else {
-        await Firebase.initializeApp(
-          options: DefaultFirebaseOptions.currentPlatform,
-        );
-      }
-    } catch (e) {
-      debugPrint('Error initializing Firebase: $e');
-      // Handle the error appropriately for your app
-      rethrow;
-    }
-  }
-
-  await setupServiceLocator();
-
-  Catcher(
-    rootWidget: ChangeNotifierProvider(
-      create: (_) => DownloadProgress(),
-      child: MyApp(),
-    ),
-    debugConfig: CatcherOptions(
-      PageReportMode(showStackTrace: true),
-      [
-        ConsoleHandler(),
-        EmailManualHandler(["kumar.jayanti@gmail.com"])
-      ],
-    ),
-    releaseConfig: CatcherOptions(
-      PageReportMode(showStackTrace: true),
-      [
-        ConsoleHandler(),
-        EmailManualHandler(["kumar.jayanti@gmail.com"])
-      ],
-    ),
-  );
-}
-
-class DownloadProgress extends ChangeNotifier {
-  double _percentDownloaded = 0.0;
-  String _path = "";
-
-  double get percentDownloaded => _percentDownloaded;
-  String get path => _path;
-
-  void updateProgress(double value, String path) {
-    _percentDownloaded = value;
-    _path = path;
-    notifyListeners();
-  }
-}
-
-class MyApp extends StatefulWidget {
-  const MyApp({Key? key}) : super(key: key);
-
-  @override
-  State<MyApp> createState() => _MyAppState();
-}
-//https://storage.googleapis.com/vasis/vasis-sounds.zip
-//https://storage.googleapis.com/vasis/last_updated.txt
-//https://storage.googleapis.com/vasis/vasis-sounds-paid.zip
-
-class _MyAppState extends State<MyApp> {
-  late Future<bool> _initializationDone;
-  //we can optimize  this by checking filesytem here.
-  var _beatsReady = false;
-  final String _kStoredEmailKey = 'email_for_signin';
-  final AppLinks _appLinks = AppLinks();
-
-  Future<String?> getStoredEmail() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_kStoredEmailKey);
-  }
-
-  void initDeepLinkHandler() {
-  _appLinks.uriLinkStream.listen((Uri uri) async {
-    print('[DeepLink] Received URI: ' + uri.toString());
-
-    // Only process valid Firebase sign-in links
-    final isSignInLink = FirebaseAuth.instance.isSignInWithEmailLink(uri.toString());
-    if (!isSignInLink) {
-      _showDeepLinkSnackBar('Not a valid sign-in link');
-      print('[DeepLink] Not a valid sign-in link');
-      return;
-    }
-
-    // Get the stored email (and clear after use)
-    final email = await getStoredEmail();
-    print('[DeepLink] Found email: ${email ?? 'null'}');
-    if (email == null) {
-      _showDeepLinkSnackBar('No email found for sign-in. Please request a new link.');
-      return;
-    }
-
-    try {
-      final cred = await FirebaseAuth.instance.signInWithEmailLink(
-        email: email,
-        emailLink: uri.toString(),
+    FlutterError.onError = (FlutterErrorDetails details) {
+      FlutterError.presentError(details);
+      _reportError(
+        details.exception,
+        details.stack ?? StackTrace.current,
+        source: 'flutter-error',
       );
-      print('[DeepLink] signInWithEmailLink SUCCESS: ${cred.user?.uid ?? "NO USER"}');
-      // Clear stored email after successful sign-in
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('email_for_signin');
-      // Navigate to ProfileScreen
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.of(Catcher.navigatorKey!.currentState!.overlay!.context).pushReplacement(
-          MaterialPageRoute(
-            builder: (context) => ProfileScreen(beatsReady: true),
-          ),
-        );
-      });
-    } catch (e) {
-      print('[DeepLink] signInWithEmailLink ERROR: $e');
-      // If the error is invalid/expired link, prompt the user to request a new link
-      if (e.toString().contains('invalid-action-code')) {
-        _showDeepLinkSnackBar('The sign-in link is invalid or expired. Please request a new link.');
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.remove('email_for_signin');
-      } else {
-        _showDeepLinkSnackBar('Sign-in failed: $e');
-      }
-    }
-  });
-}
+    };
 
-void _showDeepLinkSnackBar(String message) {
-  final ctx = Catcher.navigatorKey!.currentState!.overlay!.context;
-  if (ctx != null) {
-    ScaffoldMessenger.of(ctx).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-  }
-}
-
-  @override
-  void initState() {
-    super.initState();
-    if (!Platform.isMacOS) {
-      initDeepLinkHandler();
-    }
-    _initializationDone = _initUserProfile();
-  }
-
-  Future<bool> _initUserProfile() async {
+    // Load environment variables
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
-        print("🚫 No user signed in yet");
-        return true; // Nothing to initialize
-      }
-
-      final uid = user.uid;
-      final userDoc = FirebaseFirestore.instance.collection('users').doc(uid);
-      final userSnapshot = await userDoc.get();
-
-      // Check if user is in the 'admins' collection
-      final isAdmin = await FirebaseFirestore.instance
-          .collection('admins')
-          .doc(uid)
-          .get()
-          .then((doc) => doc.exists);
-
-      if (!userSnapshot.exists) {
-        final userEmail = user.email ?? "";
-        final userName = userEmail.split('@').first;
-        await userDoc.set({
-          'userId': uid,
-          'userName': userName,
-          'email': user.email ?? '',
-          'role': isAdmin ? 'admin' : 'user',
-          'account_type': isAdmin ? 'paid' : 'free',
-          'donation_amount': isAdmin ? 9999.0 : 0.0,
-          'created_at': FieldValue.serverTimestamp(),
-        });
-        print("🆕 Created Firestore user doc for $uid");
-      } else {
-        print("✅ User doc already exists for $uid");
-      }
-
-      return true;
-    } catch (e, st) {
-      print("❌ Error initializing user profile: $e");
-      print(st);
-      return false;
+      await dotenv.load(fileName: ".env");
+    } catch (e) {
+      debugPrint('Error loading .env file: $e');
+      // In production, you might want to handle this differently
+      // For now, we'll just print the error and continue
     }
-  }
+
+    await Supabase.initialize(
+      url: dotenv.env['SUPABASE_URL']!,
+      anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
+      authOptions: const FlutterAuthClientOptions(
+        authFlowType: AuthFlowType.pkce,
+      ),
+    );
+
+    if (offlineSupported) await initDatabaseFactory();
+    await setupServiceLocator();
+
+    Supabase.instance.client.auth.onAuthStateChange.listen(
+      (state) {
+        if (state.event == AuthChangeEvent.signedOut) {
+          // Nothing of the previous user's should linger: stop and release
+          // playback, drop their cached profile/favorites/history, and start
+          // the next person on the Home tab.
+          AppNav.goTo(AppNav.home);
+          getIt<PracticeController>().stop();
+          OfflineCacheService().clearUserData();
+        }
+      },
+      onError: (_) => ErrorLogService.instance
+          .log(LogCategory.auth, LogCode.sessionRefreshFailed),
+    );
+    ErrorLogService.instance.flush();
+
+    // Best-effort, non-blocking: catch any downloaded track that was left
+    // corrupted/partial by a previous crash before the app tries to play
+    // it, and clear out any leftover decrypted playback temp files (safe
+    // now — nothing should be mid-playback at app startup).
+    if (offlineSupported) {
+      getIt<DownloadManager>().verifyDownloadedTracks();
+      getIt<DownloadManager>().cleanupTempPlaybackFiles();
+    }
+
+    runApp(MyApp());
+  }, _reportError);
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      navigatorKey: Catcher.navigatorKey,
-      title: 'Vasis Studio App',
+      navigatorKey: navigatorKey,
+      title: 'Vasis Beats',
       debugShowCheckedModeBanner: false,
-      home: FutureBuilder<bool>(
-        future: _initializationDone,
+      theme: AppTheme.light,
+      localizationsDelegates: const [
+        ...PhoneFieldLocalization.delegates,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [Locale('en')],
+      // Single source of truth for auth-driven navigation: rebuilds on every
+      // sign-in/sign-out, whichever flow produced it (password, emailed
+      // code, registration confirmation).
+      home: StreamBuilder<AuthState>(
+        stream: Supabase.instance.client.auth.onAuthStateChange,
+        initialData: AuthState(
+          AuthChangeEvent.initialSession,
+          Supabase.instance.client.auth.currentSession,
+        ),
         builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
-          }
-
-          final user = FirebaseAuth.instance.currentUser;
-          //print("user: $user");
-          if (user == null) {
-            return EmailLinkSignInScreen(beatsReady: _beatsReady);
-          }
-
-          return ProfileScreen(beatsReady: _beatsReady);
+          final session =
+              snapshot.data?.session ?? Supabase.instance.client.auth.currentSession;
+          return session == null ? const LoginScreen() : const MainShell();
         },
-      ),
-    );
-  }
-}
-
-class AddRemoveSongButtons extends StatelessWidget {
-  const AddRemoveSongButtons({Key? key}) : super(key: key);
-  @override
-  Widget build(BuildContext context) {
-    final pageManager = getIt<PageManager>();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 20.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          FloatingActionButton.extended(
-            onPressed: pageManager.add,
-            icon: Icon(
-              Icons.add_circle_outline_rounded,
-              size: 30,
-            ),
-            label: Text('Playlist'),
-          ),
-          FloatingActionButton.extended(
-            onPressed: pageManager.remove,
-            icon: Icon(Icons.remove_circle_outline_rounded, size: 30),
-            label: Text('Playlist'),
-          ),
-        ],
       ),
     );
   }

@@ -64,3 +64,11 @@ macos/RunnerTests/
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
+# Local reference copy of the website (contains live secrets in .env.local)
+vasis_website.zip
+
+# Migration inputs/outputs (contain user emails and ~450 MB of audio)
+database_export_*.zip
+vasis-sounds-paid.zip
+migration/users_*.csv
+migration/insert_access.sql

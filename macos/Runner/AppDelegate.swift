@@ -1,6 +1,5 @@
 import Cocoa
 import FlutterMacOS
-import FirebaseCore
 
 @main
 class AppDelegate: FlutterAppDelegate {
@@ -9,8 +8,6 @@ class AppDelegate: FlutterAppDelegate {
   private var linkChannel: FlutterMethodChannel?
 
   override func applicationDidFinishLaunching(_ notification: Notification) {
-    FirebaseApp.configure()
-
     // Wire a MethodChannel to the root FlutterViewController
     if let controller = NSApplication.shared.windows.first?.contentViewController as? FlutterViewController {
       linkChannel = FlutterMethodChannel(
