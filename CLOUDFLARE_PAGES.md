@@ -1,8 +1,21 @@
 # Deploying the web build to Cloudflare Pages
 
 The Vasis Beats web target (`flutter build web`) is a static, online-only
-build — see `lib/platform_support.dart`. This replaces the old Next.js
-vasisstudio.com site, which has been removed.
+build — see `lib/platform_support.dart`. It is a separate deploy from
+vasisstudio.com (the Next.js LMS site), which is still live and stays
+load-bearing: the web app streams/downloads audio from
+`https://www.vasisstudio.com/api/files/read` client-side
+(`download_manager.dart`), and welcome email / Brevo sync also call it.
+This deploy does not replace that site.
+
+**Unverified risk:** that streaming call is cross-origin from whatever
+domain Cloudflare Pages serves this app on. It has only been confirmed to
+work same-origin (nothing beyond the login screen has been tested per
+CLAUDE.md item 3) — if `/api/files/read` doesn't send permissive CORS
+headers, browsers will block it and playback/downloads will silently fail
+on the deployed site even though sign-in and browsing work. Check the
+website's CORS config, or test playback on the deployed `*.pages.dev` URL
+before pointing anyone at it.
 
 ## Cloudflare Pages dashboard setup (Git integration)
 
