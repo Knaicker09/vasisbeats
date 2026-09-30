@@ -12,6 +12,28 @@ import 'track_encryption_service.dart';
 
 const int _maxRetries = 3;
 
+/// Where the background download of the user's catalog stands, for the
+/// Home screen (progress while running, a retry prompt when tracks failed)
+/// and the storage summary in Profile.
+@immutable
+class DownloadSyncStatus {
+  /// A sync pass is in progress.
+  final bool running;
+
+  /// Active tracks the user can access / downloaded / given up on (status
+  /// `failed` — they need an explicit retry).
+  final int total;
+  final int complete;
+  final int failed;
+
+  const DownloadSyncStatus({
+    this.running = false,
+    this.total = 0,
+    this.complete = 0,
+    this.failed = 0,
+  });
+}
+
 /// Downloads and manages on-device audio for `vms_beats_tracks`: resumable
 /// and retryable transfers, post-download integrity checks, update detection,
 /// and encryption at rest (see TrackEncryptionService). Only the encrypted
@@ -20,6 +42,12 @@ const int _maxRetries = 3;
 /// encrypted) and while a track is loaded for playback (preparePlayableFile).
 ///
 /// Native platforms only — web is online-only and streams instead.
+///
+/// There is no per-track download choice: [syncAll] keeps every track the
+/// user can access on the device, in the background, and runs whenever the
+/// catalog is refreshed (first launch after sign-in, pull-to-refresh,
+/// reconnect). Tracks that still fail after the automatic retries surface
+/// on the Home screen with a retry.
 ///
 /// Catalog metadata is cached separately by OfflineCacheService; this class
 /// owns the bytes and the download-state columns on `local_tracks`.
@@ -34,6 +62,14 @@ class DownloadManager {
 
   /// Live per-track progress (0.0–1.0) for tracks currently downloading.
   final ValueNotifier<Map<String, double>> progress = ValueNotifier({});
+
+  /// Progress and outcome of the background download of the catalog.
+  final ValueNotifier<DownloadSyncStatus> status = ValueNotifier(const DownloadSyncStatus());
+
+  Future<void>? _verifying;
+  Future<void>? _syncing;
+  bool _syncAgain = false;
+  bool _syncAgainUserInitiated = false;
 
   /// Where a track's audio can be fetched (or streamed, on web): the
   /// website's proxy route, which streams the R2 object and forwards Range
@@ -80,7 +116,7 @@ class DownloadManager {
   /// Downloads (or resumes) one track. Safe to call repeatedly — a track
   /// already `complete` and verified returns immediately. Automatic callers
   /// stop after [_maxRetries] consecutive failures; pass
-  /// [userInitiated] for an explicit retry/update, which starts fresh.
+  /// [userInitiated] for an explicit retry, which starts fresh.
   Future<void> downloadTrack(String trackId, {bool userInitiated = false}) async {
     final db = await _localDb.database;
     final rows = await db.query('local_tracks', where: 'id = ?', whereArgs: [trackId], limit: 1);
@@ -188,65 +224,67 @@ class DownloadManager {
     }
   }
 
-  /// Downloads every track of a practice set that isn't already downloaded
-  /// and current. Returns how many tracks failed.
-  Future<int> downloadPracticeSet(String practiceSetId, {bool userInitiated = true}) async {
-    final db = await _localDb.database;
-    final tracks = await db.query('local_tracks',
-        where: 'practice_set_id = ? AND is_active = 1', whereArgs: [practiceSetId]);
-    return _downloadAll(tracks, userInitiated: userInitiated);
-  }
-
-  /// Downloads all practice sets linked to LMS courses (`course_id` set),
-  /// or just one course's if [courseId] is given.
-  Future<int> downloadCourseContent({int? courseId, bool userInitiated = true}) async {
-    final db = await _localDb.database;
-    final tracks = await db.rawQuery('''
-      SELECT t.* FROM local_tracks t
-      JOIN local_practice_sets s ON s.id = t.practice_set_id
-      WHERE t.is_active = 1 AND s.is_active = 1
-        AND ${courseId == null ? 's.course_id IS NOT NULL' : 's.course_id = ?'}
-    ''', courseId == null ? [] : [courseId]);
-    return _downloadAll(tracks, userInitiated: userInitiated);
-  }
-
-  Future<int> _downloadAll(List<Map<String, Object?>> tracks, {required bool userInitiated}) async {
-    var failed = 0;
-    for (final t in tracks) {
-      final row = Map<String, dynamic>.from(t);
-      final needsWork = row['download_status'] != 'complete' || isStale(row);
-      if (!needsWork) continue;
-      if (isStale(row)) await deleteDownload(row['id'] as String);
-      await downloadTrack(row['id'] as String, userInitiated: userInitiated);
-      final after = await _statusOf(row['id'] as String);
-      if (after != 'complete') failed++;
+  /// Downloads every active track that isn't already downloaded and
+  /// current (re-downloading any that changed on the server). Runs in the
+  /// background; safe to call at any time — a call while a pass is running
+  /// queues one more pass rather than starting a second in parallel.
+  ///
+  /// Automatic callers leave tracks that hit the retry cap alone; pass
+  /// [userInitiated] (the Home screen's "try again") to retry them too.
+  Future<void> syncAll({bool userInitiated = false}) {
+    if (_syncing != null) {
+      _syncAgain = true;
+      _syncAgainUserInitiated |= userInitiated;
+      return _syncing!;
     }
-    return failed;
+    return _syncing = _runSync(userInitiated).whenComplete(() => _syncing = null);
   }
 
-  /// Re-downloads every downloaded track whose catalog entry has changed.
-  Future<int> updateStaleTracks() async {
-    final stale = await getStaleTracks();
-    return _downloadAll(stale, userInitiated: true);
+  Future<void> _runSync(bool userInitiated) async {
+    // Let the startup integrity sweep finish first, so a corrupted file it
+    // resets is downloaded again in this same pass.
+    await _verifying;
+    var retryAll = userInitiated;
+    do {
+      _syncAgain = false;
+      final db = await _localDb.database;
+      final tracks = await db.query('local_tracks', where: 'is_active = 1', orderBy: 'title');
+      await refreshStatus(running: true);
+      for (final t in tracks) {
+        final row = Map<String, dynamic>.from(t);
+        final id = row['id'] as String;
+        final stale = isStale(row);
+        if (row['download_status'] == 'complete' && !stale) continue;
+        try {
+          if (stale) await deleteDownload(id);
+          await downloadTrack(id, userInitiated: retryAll);
+        } catch (e) {
+          debugPrint('⚠️ Background download of $id stopped: $e');
+        }
+        await refreshStatus(running: true);
+      }
+      retryAll = _syncAgainUserInitiated;
+      _syncAgainUserInitiated = false;
+    } while (_syncAgain);
+    await refreshStatus(running: false);
   }
 
-  Future<List<Map<String, dynamic>>> getStaleTracks() async {
+  /// Recounts [status] from the database.
+  Future<void> refreshStatus({bool? running}) async {
     final db = await _localDb.database;
-    final rows = await db.query('local_tracks',
-        where: "download_status = 'complete' AND is_active = 1");
-    return rows.map((r) => Map<String, dynamic>.from(r)).where(isStale).toList();
-  }
-
-  /// Automatic retry of failed tracks (up to the retry cap). Called when
-  /// connectivity returns and at startup; explicit retries use
-  /// downloadTrack(userInitiated: true).
-  Future<void> retryFailedDownloads() async {
-    final db = await _localDb.database;
-    final failed = await db.query('local_tracks',
-        where: "download_status = 'failed' AND retry_count < ?", whereArgs: [_maxRetries]);
-    for (final row in failed) {
-      await downloadTrack(row['id'] as String);
-    }
+    final rows = await db.rawQuery('''
+      SELECT COUNT(*) AS total,
+             SUM(CASE WHEN download_status = 'complete' THEN 1 ELSE 0 END) AS complete,
+             SUM(CASE WHEN download_status = 'failed' THEN 1 ELSE 0 END) AS failed
+      FROM local_tracks WHERE is_active = 1
+    ''');
+    final r = rows.first;
+    status.value = DownloadSyncStatus(
+      running: running ?? status.value.running,
+      total: (r['total'] as int?) ?? 0,
+      complete: (r['complete'] as int?) ?? 0,
+      failed: (r['failed'] as int?) ?? 0,
+    );
   }
 
   /// Startup integrity sweep. Anything marked `complete` has its encrypted
@@ -255,7 +293,10 @@ class DownloadManager {
   /// `failed` so the app can tell the user and offer a retry. Downloads that
   /// were interrupted by the app being killed go back to `not_downloaded`
   /// (their partial file is kept and resumed on the next attempt).
-  Future<void> verifyDownloadedTracks() async {
+  Future<void> verifyDownloadedTracks() =>
+      _verifying ??= _verifyDownloadedTracks().whenComplete(() => refreshStatus());
+
+  Future<void> _verifyDownloadedTracks() async {
     final db = await _localDb.database;
     await db.update('local_tracks', {'download_status': 'not_downloaded'},
         where: "download_status = 'downloading'");
@@ -278,7 +319,7 @@ class DownloadManager {
   }
 
   /// Per practice set: how many tracks exist, are downloaded, failed, or
-  /// out of date — for the badges in the Practice list.
+  /// out of date — for the status badges in the Practice list.
   Future<Map<String, ({int total, int complete, int failed, int stale})>> getSetSummaries() async {
     final db = await _localDb.database;
     final rows = await db.query('local_tracks', where: 'is_active = 1');
@@ -297,7 +338,7 @@ class DownloadManager {
     return out;
   }
 
-  /// All tracks currently downloaded (Profile's downloaded-content list).
+  /// All tracks currently downloaded (Profile's storage summary).
   Future<List<Map<String, dynamic>>> getDownloadedTracks() async {
     final db = await _localDb.database;
     final rows = await db.query('local_tracks',
@@ -370,13 +411,6 @@ class DownloadManager {
       next[trackId] = value;
     }
     progress.value = next;
-  }
-
-  Future<String?> _statusOf(String trackId) async {
-    final db = await _localDb.database;
-    final rows = await db.query('local_tracks',
-        columns: ['download_status'], where: 'id = ?', whereArgs: [trackId], limit: 1);
-    return rows.isEmpty ? null : rows.first['download_status'] as String?;
   }
 
   ({String code, int? httpStatus}) _classifyFailure(Object e) {

@@ -6,7 +6,7 @@ Flutter rhythm-practice app, migrated from Firebase to the existing Supabase pro
 
 Phases 1, 3, 4, 5, 6 done. Phase 2 (data migration) and Phase 7 (testing) outstanding — see below.
 
-Since the last review: tier gating (client + server), the rest of Phase 4 (stale detection, retry UI, progress, per-set/course downloads, offline indicator, catch-up on reconnect), per-user/per-set playback settings persistence, website-parity auth, a full re-skin to the website's design, and Windows/Linux support (sqflite FFI, no audio_service) are all built. The web target is online-only.
+Since the last review: tier gating (client + server), the rest of Phase 4 (stale detection, retry UI, progress, per-set/course downloads, offline indicator, catch-up on reconnect), per-user/per-set playback settings persistence, website-parity auth, a dark neon retheme (2026-09-30, see "Visual design"), and Windows/Linux support (sqflite FFI, no audio_service) are all built. The web target is online-only.
 
 ## Outstanding work (owner's notes)
 
@@ -30,7 +30,7 @@ Since the last review: tier gating (client + server), the rest of Phase 4 (stale
 - App identity is still the tutorial's: package id `dev.suragch.flutter_audio_service_demo`, project name `flutter_audio_service_demo`, "Rate the app" store links point at the previous developer's listings. `flutter_icons` still points at `images/appicon.png`. Android release builds fall back to debug signing without `key.properties`. iOS/macOS associated domains and keychain groups still use the old demo identifiers.
 - Profile photo upload was removed with Firebase Storage; needs an R2-backed replacement.
 - Learn-screen tutorial text is placeholder wording.
-- UI is English-only (the schema has `_es`/`_pt` columns, unused).
+- UI is English-only (the schema has `_es`/`_pt` columns, unused). Tala names are shown in English: `OfflineCacheService` maps "Teen Taal" → "Three Beats" and "Do Taal" → "Two Beats" in tala names and practice-set titles on read (`_talaNamesInEnglish`); the database keeps the original names.
 - Deep links and Google/Apple sign-in are not built (the website has Google disabled).
 - Welcome email and Brevo contact sync call the production vasisstudio.com endpoints, so test accounts created in dev also hit them.
 - `vasis_website.zip` (gitignored) contains live secrets in its `.env.local`; delete when no longer needed.
@@ -44,6 +44,8 @@ Same normalisation, signup metadata keys, `verifyOtp type:'email'`, resend `type
 - Code sign-in uses `shouldCreateUser: false` (existing accounts only), so typing a stray email doesn't create an LMS student.
 - Password reset is an emailed 6-digit code, not a link.
 - The website's "complete profile" step is not replicated.
+- Shorter registration form (2026-09-30): first + last name only, saved together as `legal_name`; `initiated_name` (spiritual name) blank; no phone number, so `phone_number`/`country` are not sent and `currency` is `'USD'` (the website's fallback); `preferred_language` is always `'en'`, with no picker. Brevo sync no longer sends `whatsapp`/`location`, so the website's duplicate-number conflict can't block an app signup.
+- The app is English-only regardless of an account's `preferred_language` (existing website accounts with `es`/`pt` still see English).
 
 ## Platform behaviour
 
@@ -51,6 +53,14 @@ Same normalisation, signup metadata keys, `verifyOtp type:'email'`, resend `type
 - **Web:** online-only. Live Supabase reads, streaming from `https://www.vasisstudio.com/api/files/read?key=`; no SQLite, downloads, encryption, or offline UI.
 - **Windows/Linux:** SQLite via `sqflite_common_ffi` (`db_bootstrap_native.dart`); playback works without `audio_service` (no lock-screen controls).
 - **Android/iOS/macOS:** full feature set incl. background playback via `audio_service`.
+
+## Track downloads
+
+No per-track/per-set download controls. `DownloadManager.syncAll()` downloads every active track the user can access in the background; it is started by every successful `OfflineCacheService.refreshAll` (on each sign-in/app start from `MainShell`, pull-to-refresh, reconnect). Tracks still failing after the automatic retry cap show as a "Some tracks did not download → Try again" tile on Home (`syncAll(userInitiated: true)`). Progress/counts come from `DownloadManager.status`. Profile shows a read-only storage summary.
+
+## Visual design
+
+Dark-only neon theme (owner's choice, 2026-09-30, modelled on the "rythm" app and a beat-pad app): deep indigo background with a faint grid and slowly drifting glows, cyan (primary) and violet (secondary) neon rims with glow, blue→violet gradient CTAs, pink/amber/green accents. Sora (bundled, `assets/fonts/Sora.ttf`) for headings/labels/numbers, Nunito for body. Applies to auth screens too, so the app no longer looks like vasisstudio.com. The Vasis Studio logo has navy lettering that vanishes on dark, so `BrandMark` (gradient waveform badge + "Vasis Beats" wordmark) replaces it in the UI; the app icon is unchanged. Practice player is a pad console: beat lights (sam in pink), LOOP / PLAY / TIMER pads (timer opens a bottom sheet), BPM stepper (tap ±1, long-press ±5) + slider, mix strip. Motion (background drift, play-pad breathing) stops under the OS reduce-motion setting. Put glow shadows only behind opaque fills — translucent fills let the glow wash the panel out.
 
 ## Tier gating
 
@@ -66,7 +76,7 @@ Entitled = admin OR `account_type = 'paid'` OR `donation_amount > 0` (`private.v
 
 - `lib/main.dart` — init, error reporting (mailto to namelestek@gmail.com), auth-driven routing, sign-out cache cleanup.
 - `lib/platform_support.dart` — platform capability flags.
-- `lib/ui/` — `brand.dart` (website design tokens), `widgets.dart`, `dialogs.dart`.
+- `lib/ui/` — `brand.dart` (neon design tokens, `nunito()`/`sora()` text helpers, `AppTheme.dark`), `widgets.dart` (`NeonBackground`, `GlassTile`, `PortalCard`, `NeonPad`, `GradientButton`, `BrandMark`, …), `dialogs.dart`.
 - `lib/screens/` — `main_shell` (nav), `home_screen`, `practice_screen`, `learn_screen`, `profile_screen`, `admin_screen`; `auth/` holds login, register, forgot/change password and the OTP view.
 - `lib/services/` — `auth_service`, `welcome_email`, `beats_profile_service`, `offline_cache_service` + `local_database` (+ `db_bootstrap*` conditional import), `download_manager` + `track_encryption_service`, `practice_audio_handler` + `practice_controller` + `practice_settings_service` (multi-stem player and saved settings), `connectivity_service`, `error_log_service`, `service_locator`.
 - `vms_students` rows are created by a database trigger on `auth.users`; the app never inserts them.

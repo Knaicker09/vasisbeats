@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 
-/// Visual beat/pulse indicator: a row of dots, one per beat in the tala's
-/// cycle, with the current beat highlighted and pulsing at the current
-/// tempo. Presentational only — give it bpm, beat count and whether audio is
-/// playing, and it animates while [isPlaying] is true.
+import '../ui/brand.dart';
+
+/// Visual beat/pulse indicator: a row of neon lights, one per beat in the
+/// tala's cycle, with the current beat lit and pulsing at the current tempo
+/// (the first beat of the cycle — sam — in [samColor]). Presentational only
+/// — give it bpm, beat count and whether audio is playing, and it animates
+/// while [isPlaying] is true.
 class BeatPulseIndicator extends StatefulWidget {
   final int bpm;
   final int beatsCount;
   final bool isPlaying;
   final Color activeColor;
+  final Color samColor;
   final Color inactiveColor;
 
   const BeatPulseIndicator({
@@ -16,8 +20,9 @@ class BeatPulseIndicator extends StatefulWidget {
     required this.bpm,
     required this.beatsCount,
     required this.isPlaying,
-    this.activeColor = Colors.white,
-    this.inactiveColor = const Color(0x55FFFFFF),
+    this.activeColor = Brand.cyan,
+    this.samColor = Brand.pink,
+    this.inactiveColor = Brand.borderStrong,
   });
 
   @override
@@ -76,30 +81,40 @@ class _BeatPulseIndicatorState extends State<BeatPulseIndicator>
     return Semantics(
       label: widget.isPlaying ? 'Beat indicator, playing at ${widget.bpm} BPM' : 'Beat indicator, stopped',
       child: SizedBox(
-        height: 40,
+        height: 28,
         child: AnimatedBuilder(
           animation: _controller,
-          builder: (context, _) => Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(_beats, (index) {
-              final active = widget.isPlaying && index == _currentBeat;
-              final scale = active ? 1.0 + (0.5 * (1 - _controller.value)) : 1.0;
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 3),
-                child: Transform.scale(
-                  scale: scale,
-                  child: Container(
-                    width: 12,
-                    height: 12,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: active ? widget.activeColor : widget.inactiveColor,
+          builder: (context, _) => LayoutBuilder(builder: (context, c) {
+            // Shrink the lights so a long cycle (e.g. 16 beats) still fits
+            // on one row on a narrow phone.
+            final size = ((c.maxWidth / _beats) - 8).clamp(6.0, 12.0);
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(_beats, (index) {
+                final active = widget.isPlaying && index == _currentBeat;
+                final color = index == 0 ? widget.samColor : widget.activeColor;
+                final fade = 1 - _controller.value;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Transform.scale(
+                    scale: active ? 1.0 + 0.5 * fade : 1.0,
+                    child: Container(
+                      width: size,
+                      height: size,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: active ? color : widget.inactiveColor,
+                        border: index == 0 && !active
+                            ? Border.all(color: widget.samColor.withValues(alpha: 0.6))
+                            : null,
+                        boxShadow: active ? Brand.glow(color, 0.5 + 0.5 * fade) : null,
+                      ),
                     ),
                   ),
-                ),
-              );
-            }),
-          ),
+                );
+              }),
+            );
+          }),
         ),
       ),
     );

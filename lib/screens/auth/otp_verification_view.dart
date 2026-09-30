@@ -116,11 +116,11 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
         Text(
           'We sent a code to ${widget.email}.',
           textAlign: TextAlign.center,
-          style: nunito(14, 600, color: Brand.gray700),
+          style: nunito(14, 600, color: Brand.textSecondary),
         ),
         const SizedBox(height: 4),
         Text(widget.instruction,
-            textAlign: TextAlign.center, style: nunito(14, 400, color: Brand.gray600)),
+            textAlign: TextAlign.center, style: nunito(14, 400, color: Brand.textMuted)),
         const SizedBox(height: 20),
         OtpCodeField(controller: _code, onCompleted: _verify),
         const SizedBox(height: 16),
@@ -139,7 +139,7 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
           alignment: WrapAlignment.center,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Text("Didn't get it? ", style: nunito(14, 400, color: Brand.gray600)),
+            Text("Didn't get it? ", style: nunito(14, 400, color: Brand.textMuted)),
             TextButton(
               onPressed: (_cooldown > 0 || _resending) ? null : _resend,
               child: Text(_resending
@@ -153,7 +153,7 @@ class _OtpVerificationViewState extends State<OtpVerificationView> {
         TextButton(onPressed: widget.onUseAnotherEmail, child: const Text('Use another email')),
         TextButton(
           onPressed: () => launchSupportEmail(context, subject: 'Vasis Beats sign-in help'),
-          child: Text('Contact support', style: nunito(14, 600, color: Brand.gray600)),
+          child: Text('Contact support', style: nunito(14, 600, color: Brand.textMuted)),
         ),
       ],
     );

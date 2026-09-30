@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_nav.dart';
-import '../platform_support.dart';
 import '../services/beats_profile_service.dart';
-import '../services/download_manager.dart';
 import '../services/offline_cache_service.dart';
 import '../services/practice_controller.dart' show isPaidSet;
 import '../ui/brand.dart';
@@ -35,8 +33,7 @@ const List<_Tutorial> _tutorials = [
   ),
 ];
 
-/// Learn tab: short tutorials plus practice sets linked to LMS courses,
-/// which can be downloaded together for offline use.
+/// Learn tab: short tutorials plus practice sets linked to LMS courses.
 class LearnView extends StatefulWidget {
   const LearnView({super.key});
 
@@ -46,7 +43,6 @@ class LearnView extends StatefulWidget {
 
 class _LearnViewState extends State<LearnView> {
   late Future<({List<Map<String, dynamic>> sets, bool isPaid})> _future;
-  bool _downloading = false;
 
   @override
   void initState() {
@@ -74,23 +70,6 @@ class _LearnViewState extends State<LearnView> {
     );
   }
 
-  Future<void> _downloadCourseContent() async {
-    setState(() => _downloading = true);
-    try {
-      final failed = await DownloadManager().downloadCourseContent();
-      if (mounted) {
-        showBrandSnack(
-          context,
-          failed == 0
-              ? 'Course content is saved on this device.'
-              : '$failed track${failed == 1 ? '' : 's'} could not be downloaded. Try again.',
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _downloading = false);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return PortalScroll(
@@ -102,10 +81,10 @@ class _LearnViewState extends State<LearnView> {
             padding: EdgeInsets.zero,
             child: ExpansionTile(
               leading: const Icon(Icons.play_circle_outline),
-              title: Text(t.title, style: nunito(16, 600, color: Brand.gray900)),
+              title: Text(t.title, style: nunito(16, 600, color: Brand.text)),
               childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               expandedCrossAxisAlignment: CrossAxisAlignment.start,
-              children: [Text(t.body, style: nunito(14, 400, color: Brand.gray700, height: 1.5))],
+              children: [Text(t.body, style: nunito(14, 400, color: Brand.textSecondary, height: 1.5))],
             ),
           ),
         FutureBuilder<({List<Map<String, dynamic>> sets, bool isPaid})>(
@@ -113,7 +92,7 @@ class _LearnViewState extends State<LearnView> {
           builder: (context, snapshot) {
             final data = snapshot.data;
             if (data == null) {
-              return const Center(child: CircularProgressIndicator(color: Brand.orange));
+              return const Center(child: CircularProgressIndicator(color: Brand.cyan));
             }
             return PortalCard(
               header: 'Course-linked practice',
@@ -127,7 +106,7 @@ class _LearnViewState extends State<LearnView> {
                             contentPadding: EdgeInsets.zero,
                             leading: const Icon(Icons.music_note),
                             title: Text(s['title'] as String? ?? '',
-                                style: nunito(15, 600, color: Brand.gray900)),
+                                style: nunito(15, 600, color: Brand.text)),
                             trailing: (isPaidSet(s) && !data.isPaid)
                                 ? const StatusBadge('Supporters',
                                     kind: BadgeKind.amber, icon: Icons.lock_outline)
@@ -137,15 +116,6 @@ class _LearnViewState extends State<LearnView> {
                                     practiceSetTitle: s['title'] as String?)
                                 : AppNav.openPractice(s),
                           ),
-                        if (offlineSupported) ...[
-                          const SizedBox(height: 12),
-                          GradientButton(
-                            label: 'Download all course content',
-                            icon: Icons.download,
-                            loading: _downloading,
-                            onPressed: _downloading ? null : _downloadCourseContent,
-                          ),
-                        ],
                       ],
                     ),
             );

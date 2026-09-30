@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../platform_support.dart';
 import 'beats_profile_service.dart';
+import 'download_manager.dart';
 import 'local_database.dart';
 
 /// The app's data access for catalog text, favorites, practice history and
@@ -20,6 +21,26 @@ import 'local_database.dart';
 /// User-specific rows (profile, favorites, history) are tied to the signed-in
 /// account, so switching accounts on a device never shows the previous
 /// user's data.
+/// Tala names are Hindi numbers in the catalog ("Teen Taal", "Do Taal");
+/// the app shows them in English. Applied to tala names and practice-set
+/// titles as they leave this service, so every screen (and the lock-screen
+/// title) gets the English name while the database keeps the original.
+const Map<String, String> _talaNamesInEnglish = {
+  'Teen Taal': 'Three Beats',
+  'Do Taal': 'Two Beats',
+};
+
+String? _inEnglish(String? text) {
+  if (text == null) return null;
+  var out = text;
+  _talaNamesInEnglish.forEach((hindi, english) => out = out.replaceAll(hindi, english));
+  return out;
+}
+
+List<Map<String, dynamic>> _withEnglish(Iterable<Map<String, dynamic>> rows, String field) => [
+      for (final r in rows) {...r, field: _inEnglish(r[field] as String?)},
+    ];
+
 class OfflineCacheService {
   OfflineCacheService._();
   static final OfflineCacheService _instance = OfflineCacheService._();
@@ -225,10 +246,11 @@ class OfflineCacheService {
           .select()
           .eq('is_active', true)
           .order('display_order');
-      return List<Map<String, dynamic>>.from(rows);
+      return _withEnglish(List<Map<String, dynamic>>.from(rows), 'name');
     }
     final db = await _localDb.database;
-    return db.query('local_talas', where: 'is_active = 1', orderBy: 'display_order');
+    return _withEnglish(
+        await db.query('local_talas', where: 'is_active = 1', orderBy: 'display_order'), 'name');
   }
 
   Future<List<Map<String, dynamic>>> getCachedPracticeSets({String? talaId}) async {
@@ -236,14 +258,17 @@ class OfflineCacheService {
       var query = _client.from('vms_beats_practice_sets').select().eq('is_active', true);
       if (talaId != null) query = query.eq('tala_id', talaId);
       final rows = await query.order('display_order');
-      return List<Map<String, dynamic>>.from(rows);
+      return _withEnglish(List<Map<String, dynamic>>.from(rows), 'title');
     }
     final db = await _localDb.database;
-    return db.query(
-      'local_practice_sets',
-      where: talaId == null ? 'is_active = 1' : 'is_active = 1 AND tala_id = ?',
-      whereArgs: talaId == null ? null : [talaId],
-      orderBy: 'display_order',
+    return _withEnglish(
+      await db.query(
+        'local_practice_sets',
+        where: talaId == null ? 'is_active = 1' : 'is_active = 1 AND tala_id = ?',
+        whereArgs: talaId == null ? null : [talaId],
+        orderBy: 'display_order',
+      ),
+      'title',
     );
   }
 
@@ -505,10 +530,15 @@ class OfflineCacheService {
   /// Best-effort background refresh of everything cacheable for this
   /// student. Fire-and-forget after a successful profile load; a failure
   /// just leaves the cache as fresh as it was last time.
+  ///
+  /// A successful catalog pull (so: online) also starts the background
+  /// download of every track the user can access — new ones, changed ones,
+  /// and ones that failed earlier and are still under the retry cap.
   Future<void> refreshAll(int studentId) async {
     if (!offlineSupported) return;
     try {
       await refreshCatalog();
+      DownloadManager().syncAll();
       await refreshFavorites(studentId);
       await refreshPracticeHistory(studentId);
       await syncPendingPracticeSessions();

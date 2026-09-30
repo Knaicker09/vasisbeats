@@ -220,7 +220,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           Text(
             'Tip: the code is valid for a short time. Nothing arrived? Check your spam folder.',
             textAlign: TextAlign.center,
-            style: nunito(12, 400, color: Brand.gray500),
+            style: nunito(12, 400, color: Brand.textMuted),
           ),
         ],
       ),

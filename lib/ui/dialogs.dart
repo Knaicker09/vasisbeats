@@ -13,8 +13,8 @@ Future<void> showLockedDialog(BuildContext context, {String? practiceSetTitle}) 
       icon: Container(
         width: 56,
         height: 56,
-        decoration: const BoxDecoration(color: Brand.purple100, shape: BoxShape.circle),
-        child: const Icon(Icons.lock_outline, color: Brand.purple, size: 28),
+        decoration: const BoxDecoration(color: Brand.surfaceRaised, shape: BoxShape.circle),
+        child: const Icon(Icons.lock_outline, color: Brand.violet, size: 28),
       ),
       title: const Text('Supporters only'),
       content: Text(

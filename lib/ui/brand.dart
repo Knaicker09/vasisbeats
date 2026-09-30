@@ -1,91 +1,87 @@
 import 'package:flutter/material.dart';
 
-/// Design tokens taken from the Vasis Studio website's real Tailwind classes
-/// (not the unused shadcn defaults in its globals.css):
-///  * public/auth pages: white + purple, gradient primary buttons, 8px
-///    controls, 16px auth cards, on a flat #d0d0d0 backdrop;
-///  * student/admin portal: deep-navy chrome, translucent "glass" tiles,
-///    orange navigation accents, over the piano-keys background.
+/// Dark neon design tokens: deep indigo space, cyan and violet neon
+/// outlines with glow, electric-blue → violet gradients, and pink / amber /
+/// green accents for highlights and status. The app is dark-only.
 class Brand {
   Brand._();
 
-  // Purples
-  static const purple = Color(0xFF7618C0); // primary buttons, focus, active
-  static const purpleLight = Color(0xFFAD46FF); // gradient start, links
-  static const purpleHover = Color(0xFF9A3EE6);
-  static const purpleDark = Color(0xFF6A1BB3);
-  static const purple500 = Color(0xFFA855F7); // marketing accent
-  static const purple50 = Color(0xFFFAF5FF);
-  static const purple100 = Color(0xFFF3E8FF); // focus halo
-  static const purple200 = Color(0xFFE9D5FF);
-  static const purple300 = Color(0xFFD8B4FE);
+  // Backgrounds (darkest → lightest)
+  static const bg = Color(0xFF07051A); // scaffold
+  static const bgDeep = Color(0xFF0B0724); // chrome bars
+  static const surface = Color(0xFF120D2E); // cards, inputs, dialogs
+  static const surfaceRaised = Color(0xFF1B1542); // headers, hovered rows
+  static const border = Color(0xFF2E2760);
+  static const borderStrong = Color(0xFF443B85);
 
-  // Portal chrome
-  static const orange = Color(0xFFEA580C); // active nav, portal actions
-  static const orangeBright = Color(0xFFFE9A00);
-  static const navy = Color(0xFF130432);
+  // Neon accents
+  static const cyan = Color(0xFF22D3EE); // primary
+  static const cyanBright = Color(0xFF67E8F9);
+  static const violet = Color(0xFFA855F7); // secondary
+  static const violetDeep = Color(0xFF7C3AED);
+  static const blue = Color(0xFF3B82F6); // electric blue
+  static const pink = Color(0xFFF472B6);
+  static const amber = Color(0xFFFBBF24);
+  static const green = Color(0xFF34D399);
+  static const red = Color(0xFFF43F5E);
 
-  // Neutrals
-  static const gray50 = Color(0xFFF9FAFB);
-  static const gray100 = Color(0xFFF3F4F6);
-  static const gray200 = Color(0xFFE5E7EB);
-  static const gray300 = Color(0xFFD1D5DB);
-  static const gray400 = Color(0xFF9CA3AF);
-  static const gray500 = Color(0xFF6B7280);
-  static const gray600 = Color(0xFF4B5563);
-  static const gray700 = Color(0xFF374151);
-  static const gray900 = Color(0xFF111827);
-  static const authBackdrop = Color(0xFFD0D0D0);
+  // Text
+  static const text = Color(0xFFF5F3FF);
+  static const textSecondary = Color(0xFFC9C3EA);
+  static const textMuted = Color(0xFF8C85B8);
+  static const textFaint = Color(0xFF5E5890);
 
   // Status
-  static const error = Color(0xFFDC2626);
-  static const errorBg = Color(0xFFFEF2F2);
-  static const errorBorder = Color(0xFFFECACA);
-  static const success = Color(0xFF16A34A);
-  static const successBg = Color(0xFFF0FDF4);
-  static const successBorder = Color(0xFFBBF7D0);
-  static const successText = Color(0xFF15803D);
-  static const warning = Color(0xFFD97706);
-  static const warningBg = Color(0xFFFFFBEB);
+  static const error = red;
+  static const errorText = Color(0xFFFDA4AF);
+  static const success = green;
+  static const successText = Color(0xFF6EE7B7);
+  static const warning = amber;
+  static const warningText = Color(0xFFFDE68A);
 
   // Shape
-  static const radius = 8.0; // buttons, inputs
-  static const cardRadius = 12.0;
-  static const authCardRadius = 16.0;
+  static const radius = 12.0; // buttons, inputs
+  static const cardRadius = 18.0;
+  static const authCardRadius = 24.0;
   static const pill = 999.0;
 
-  static const primaryGradient = LinearGradient(colors: [purpleLight, purple]);
-  static const primaryGradientHover = LinearGradient(colors: [purpleHover, purpleDark]);
+  /// Primary CTA: electric blue → violet (the "rythm" wordmark gradient).
+  static const primaryGradient = LinearGradient(colors: [cyan, blue, violet], stops: [0, 0.45, 1]);
+  static const primaryGradientHover =
+      LinearGradient(colors: [cyanBright, Color(0xFF60A5FA), Color(0xFFC084FC)], stops: [0, 0.45, 1]);
+
+  /// Headline text gradient.
+  static const textGradient = LinearGradient(colors: [cyanBright, Color(0xFF818CF8), violet]);
 
   static const chromeGradient = LinearGradient(
-    begin: Alignment.topRight,
-    end: Alignment.bottomLeft,
-    colors: [Color(0xFF130432), Color(0xFF040732), Color(0xFF250432), Color(0xFF0A0432)],
-    stops: [0.0, 0.38, 0.61, 1.0],
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [Color(0xF20B0724), Color(0xE6100A30)],
   );
 
-  /// The portal's translucent terracotta/red/green tile.
-  static const glassGradient = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [Color(0x80C95344), Color(0x667F1D1D), Color(0x4D166534)],
-  );
+  /// A neon glow in [color]: a tight bright halo plus a wide soft one.
+  static List<BoxShadow> glow(Color color, [double strength = 1]) => [
+        BoxShadow(color: color.withValues(alpha: 0.45 * strength), blurRadius: 12 * strength, spreadRadius: -2),
+        BoxShadow(color: color.withValues(alpha: 0.25 * strength), blurRadius: 32 * strength, spreadRadius: -4),
+      ];
 
   static const cardShadow = [
-    BoxShadow(color: Color(0x1A000000), blurRadius: 6, offset: Offset(0, 4), spreadRadius: -1),
-    BoxShadow(color: Color(0x1A000000), blurRadius: 4, offset: Offset(0, 2), spreadRadius: -2),
-  ];
-  static const authShadow = [
-    BoxShadow(color: Color(0x1A000000), blurRadius: 25, offset: Offset(0, 20), spreadRadius: -5),
-    BoxShadow(color: Color(0x1A000000), blurRadius: 10, offset: Offset(0, 8), spreadRadius: -6),
+    BoxShadow(color: Color(0x66000000), blurRadius: 24, offset: Offset(0, 12), spreadRadius: -8),
   ];
 }
 
-/// Nunito, weight set through the variable font's `wght` axis so every
-/// weight renders correctly from the single bundled font file.
-TextStyle nunito(double size, int weight, {Color? color, double? height, double? spacing}) {
+/// Nunito (body text), weight set through the variable font's `wght` axis
+/// so every weight renders correctly from the single bundled font file.
+TextStyle nunito(double size, int weight, {Color? color, double? height, double? spacing}) =>
+    _variable('Nunito', size, weight, color, height, spacing);
+
+/// Sora (display: headings, labels, numbers), same variable-weight handling.
+TextStyle sora(double size, int weight, {Color? color, double? height, double? spacing}) =>
+    _variable('Sora', size, weight, color, height, spacing);
+
+TextStyle _variable(String family, double size, int weight, Color? color, double? height, double? spacing) {
   return TextStyle(
-    fontFamily: 'Nunito',
+    fontFamily: family,
     fontSize: size,
     fontWeight: FontWeight.values[(weight ~/ 100) - 1],
     fontVariations: [FontVariation('wght', weight.toDouble())],
@@ -99,41 +95,47 @@ class AppTheme {
   AppTheme._();
 
   static TextTheme get _textTheme => TextTheme(
-        displayLarge: nunito(48, 700, color: Brand.gray900, height: 1.1),
-        displayMedium: nunito(36, 700, color: Brand.gray900, height: 1.15),
-        headlineLarge: nunito(36, 700, color: Brand.gray900),
-        headlineMedium: nunito(30, 700, color: Brand.gray900),
-        headlineSmall: nunito(24, 700, color: Brand.gray900),
-        titleLarge: nunito(20, 600, color: Brand.gray900),
-        titleMedium: nunito(18, 600, color: Brand.gray900),
-        titleSmall: nunito(16, 600, color: Brand.gray900),
-        bodyLarge: nunito(16, 400, color: Brand.gray700),
-        bodyMedium: nunito(14, 400, color: Brand.gray700),
-        bodySmall: nunito(12, 400, color: Brand.gray500),
-        labelLarge: nunito(14, 600, color: Brand.gray700),
-        labelMedium: nunito(12, 500, color: Brand.gray600),
-        labelSmall: nunito(11, 500, color: Brand.gray500),
+        displayLarge: sora(48, 700, color: Brand.text, height: 1.1),
+        displayMedium: sora(36, 700, color: Brand.text, height: 1.15),
+        headlineLarge: sora(34, 700, color: Brand.text),
+        headlineMedium: sora(28, 700, color: Brand.text),
+        headlineSmall: sora(22, 700, color: Brand.text),
+        titleLarge: sora(19, 600, color: Brand.text),
+        titleMedium: nunito(17, 700, color: Brand.text),
+        titleSmall: nunito(15, 700, color: Brand.text),
+        bodyLarge: nunito(16, 400, color: Brand.textSecondary),
+        bodyMedium: nunito(14, 400, color: Brand.textSecondary),
+        bodySmall: nunito(12, 400, color: Brand.textMuted),
+        labelLarge: sora(13, 600, color: Brand.textSecondary, spacing: 0.4),
+        labelMedium: nunito(12, 600, color: Brand.textMuted),
+        labelSmall: nunito(11, 600, color: Brand.textMuted),
       );
 
-  static ThemeData get light {
-    final scheme = ColorScheme.fromSeed(seedColor: Brand.purple).copyWith(
-      primary: Brand.purple,
-      onPrimary: Colors.white,
-      primaryContainer: Brand.purple100,
-      onPrimaryContainer: Brand.purple,
-      secondary: Brand.purpleLight,
+  static ThemeData get dark {
+    final scheme = ColorScheme.fromSeed(seedColor: Brand.violet, brightness: Brightness.dark).copyWith(
+      primary: Brand.cyan,
+      onPrimary: Brand.bg,
+      primaryContainer: Brand.surfaceRaised,
+      onPrimaryContainer: Brand.cyanBright,
+      secondary: Brand.violet,
       onSecondary: Colors.white,
-      tertiary: Brand.orange,
-      onTertiary: Colors.white,
-      surface: Colors.white,
-      onSurface: Brand.gray900,
-      surfaceContainerHighest: Brand.gray100,
-      error: Brand.error,
-      outline: Brand.gray300,
-      outlineVariant: Brand.gray200,
+      tertiary: Brand.pink,
+      onTertiary: Brand.bg,
+      surface: Brand.surface,
+      onSurface: Brand.text,
+      onSurfaceVariant: Brand.textSecondary,
+      surfaceContainerLowest: Brand.bg,
+      surfaceContainerLow: Brand.surface,
+      surfaceContainer: Brand.surface,
+      surfaceContainerHigh: Brand.surfaceRaised,
+      surfaceContainerHighest: Brand.surfaceRaised,
+      error: Brand.red,
+      onError: Colors.white,
+      outline: Brand.borderStrong,
+      outlineVariant: Brand.border,
     );
 
-    OutlineInputBorder border(Color color, [double width = 2]) => OutlineInputBorder(
+    OutlineInputBorder border(Color color, [double width = 1.5]) => OutlineInputBorder(
           borderRadius: BorderRadius.circular(Brand.radius),
           borderSide: BorderSide(color: color, width: width),
         );
@@ -142,138 +144,170 @@ class AppTheme {
 
     return ThemeData(
       useMaterial3: true,
+      brightness: Brightness.dark,
       fontFamily: 'Nunito',
       colorScheme: scheme,
-      scaffoldBackgroundColor: Colors.white,
+      scaffoldBackgroundColor: Brand.bg,
+      canvasColor: Brand.surface,
       textTheme: _textTheme,
       primaryTextTheme: _textTheme,
-      dividerColor: Brand.gray200,
+      dividerColor: Brand.border,
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: Colors.white,
+        fillColor: Brand.bg.withValues(alpha: 0.6),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        labelStyle: nunito(14, 600, color: Brand.gray700),
-        floatingLabelStyle: nunito(14, 600, color: Brand.purple),
-        hintStyle: nunito(14, 400, color: Brand.gray500),
-        errorStyle: nunito(13, 400, color: Brand.error),
-        border: border(Brand.gray200),
-        enabledBorder: border(Brand.gray200),
-        focusedBorder: border(Brand.purpleLight),
-        errorBorder: border(const Color(0xFFFCA5A5)),
-        focusedErrorBorder: border(Brand.error),
-        disabledBorder: border(Brand.gray200, 1),
+        labelStyle: nunito(14, 600, color: Brand.textMuted),
+        floatingLabelStyle: nunito(14, 700, color: Brand.cyan),
+        hintStyle: nunito(14, 400, color: Brand.textFaint),
+        errorStyle: nunito(13, 500, color: Brand.errorText),
+        prefixIconColor: Brand.textMuted,
+        suffixIconColor: Brand.textMuted,
+        border: border(Brand.border),
+        enabledBorder: border(Brand.border),
+        focusedBorder: border(Brand.cyan, 2),
+        errorBorder: border(Brand.red.withValues(alpha: 0.7)),
+        focusedErrorBorder: border(Brand.red, 2),
+        disabledBorder: border(Brand.border, 1),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          backgroundColor: Brand.purple,
-          foregroundColor: Colors.white,
-          disabledBackgroundColor: Brand.gray400,
+          backgroundColor: Brand.cyan,
+          foregroundColor: Brand.bg,
+          disabledBackgroundColor: Brand.surfaceRaised,
+          disabledForegroundColor: Brand.textFaint,
           minimumSize: const Size(0, 48),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           shape: buttonShape,
-          textStyle: nunito(14, 600),
+          textStyle: sora(14, 700),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: Brand.purple,
-          foregroundColor: Colors.white,
-          disabledBackgroundColor: Brand.gray400,
+          backgroundColor: Brand.surfaceRaised,
+          foregroundColor: Brand.text,
+          disabledBackgroundColor: Brand.surface,
           minimumSize: const Size(0, 44),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
           shape: buttonShape,
           elevation: 0,
-          textStyle: nunito(14, 600),
+          textStyle: sora(13, 600),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: Brand.purple,
+          foregroundColor: Brand.text,
           minimumSize: const Size(0, 44),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-          side: const BorderSide(color: Brand.purple, width: 2),
+          side: const BorderSide(color: Brand.borderStrong, width: 1.5),
           shape: buttonShape,
-          textStyle: nunito(14, 600),
+          textStyle: sora(13, 600),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: Brand.purpleLight,
-          textStyle: nunito(14, 600),
+          foregroundColor: Brand.cyan,
+          textStyle: nunito(14, 700),
         ),
       ),
       iconButtonTheme: IconButtonThemeData(
-        style: IconButton.styleFrom(foregroundColor: Brand.gray600),
+        style: IconButton.styleFrom(foregroundColor: Brand.textSecondary),
       ),
+      iconTheme: const IconThemeData(color: Brand.textSecondary),
       cardTheme: CardThemeData(
-        color: Colors.white,
-        elevation: 2,
-        shadowColor: const Color(0x33000000),
+        color: Brand.surface,
+        elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(Brand.cardRadius),
-          side: const BorderSide(color: Brand.gray200),
+          side: const BorderSide(color: Brand.border),
         ),
       ),
       chipTheme: ChipThemeData(
-        backgroundColor: Colors.white,
-        selectedColor: Brand.purple,
-        secondarySelectedColor: Brand.purple,
-        side: const BorderSide(color: Brand.gray300),
-        labelStyle: nunito(13, 500, color: Brand.gray700),
-        secondaryLabelStyle: nunito(13, 500, color: Colors.white),
-        checkmarkColor: Colors.white,
+        backgroundColor: Brand.surface,
+        selectedColor: Brand.cyan.withValues(alpha: 0.18),
+        secondarySelectedColor: Brand.cyan.withValues(alpha: 0.18),
+        side: WidgetStateBorderSide.resolveWith((s) => BorderSide(
+              color: s.contains(WidgetState.selected) ? Brand.cyan : Brand.border,
+              width: 1.5,
+            )),
+        labelStyle: sora(12, 600, color: Brand.textSecondary),
+        secondaryLabelStyle: sora(12, 700, color: Brand.cyanBright),
+        checkmarkColor: Brand.cyanBright,
+        iconTheme: const IconThemeData(color: Brand.textSecondary, size: 16),
         shape: const StadiumBorder(),
       ),
       dialogTheme: DialogThemeData(
-        backgroundColor: Colors.white,
+        backgroundColor: Brand.surface,
         surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Brand.cardRadius)),
-        titleTextStyle: nunito(18, 600, color: Brand.gray900),
-        contentTextStyle: nunito(14, 400, color: Brand.gray600),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Brand.cardRadius),
+          side: const BorderSide(color: Brand.borderStrong),
+        ),
+        titleTextStyle: sora(18, 700, color: Brand.text),
+        contentTextStyle: nunito(14, 400, color: Brand.textSecondary),
       ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: Brand.surface,
+        surfaceTintColor: Colors.transparent,
+        showDragHandle: true,
+        dragHandleColor: Brand.borderStrong,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Brand.authCardRadius))),
+      ),
+      popupMenuTheme: const PopupMenuThemeData(color: Brand.surfaceRaised, surfaceTintColor: Colors.transparent),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        backgroundColor: Brand.gray900,
-        contentTextStyle: nunito(14, 500, color: Colors.white),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Brand.radius)),
+        backgroundColor: Brand.surfaceRaised,
+        contentTextStyle: nunito(14, 600, color: Brand.text),
+        actionTextColor: Brand.cyan,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Brand.radius),
+          side: BorderSide(color: Brand.cyan.withValues(alpha: 0.5)),
+        ),
       ),
       sliderTheme: SliderThemeData(
-        activeTrackColor: Brand.purple,
-        inactiveTrackColor: Brand.gray200,
-        thumbColor: Brand.purple,
-        overlayColor: Brand.purple.withValues(alpha: 0.12),
-        trackHeight: 6,
-        valueIndicatorColor: Brand.purple,
+        activeTrackColor: Brand.cyan,
+        inactiveTrackColor: Brand.border,
+        thumbColor: Colors.white,
+        overlayColor: Brand.cyan.withValues(alpha: 0.16),
+        trackHeight: 4,
+        valueIndicatorColor: Brand.surfaceRaised,
+        valueIndicatorTextStyle: sora(12, 700, color: Brand.cyanBright),
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9, elevation: 4),
       ),
       progressIndicatorTheme: const ProgressIndicatorThemeData(
-        color: Brand.purple,
-        linearTrackColor: Brand.gray200,
+        color: Brand.cyan,
+        linearTrackColor: Brand.border,
+        circularTrackColor: Colors.transparent,
       ),
       checkboxTheme: CheckboxThemeData(
         fillColor: WidgetStateProperty.resolveWith(
-          (s) => s.contains(WidgetState.selected) ? Brand.purpleLight : null,
+          (s) => s.contains(WidgetState.selected) ? Brand.cyan : Colors.transparent,
         ),
-        side: const BorderSide(color: Brand.gray300),
+        checkColor: const WidgetStatePropertyAll(Brand.bg),
+        side: const BorderSide(color: Brand.borderStrong, width: 1.5),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       ),
       radioTheme: RadioThemeData(
         fillColor: WidgetStateProperty.resolveWith(
-          (s) => s.contains(WidgetState.selected) ? Brand.purpleLight : Brand.gray400,
+          (s) => s.contains(WidgetState.selected) ? Brand.cyan : Brand.textMuted,
         ),
       ),
-      dividerTheme: const DividerThemeData(color: Brand.gray200, space: 1),
-      textSelectionTheme: const TextSelectionThemeData(
-        cursorColor: Brand.purple,
-        selectionHandleColor: Brand.purple,
+      dividerTheme: const DividerThemeData(color: Brand.border, space: 1),
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: Brand.cyan,
+        selectionColor: Brand.cyan.withValues(alpha: 0.3),
+        selectionHandleColor: Brand.cyan,
       ),
-      listTileTheme: const ListTileThemeData(iconColor: Brand.purple),
+      listTileTheme: const ListTileThemeData(iconColor: Brand.cyan, textColor: Brand.text),
       expansionTileTheme: const ExpansionTileThemeData(
-        iconColor: Brand.purple,
-        collapsedIconColor: Brand.gray500,
+        iconColor: Brand.cyan,
+        collapsedIconColor: Brand.textMuted,
+        textColor: Brand.text,
+        collapsedTextColor: Brand.text,
         shape: Border(),
         collapsedShape: Border(),
       ),
+      dropdownMenuTheme: DropdownMenuThemeData(textStyle: nunito(14, 600, color: Brand.text)),
     );
   }
 }

@@ -31,7 +31,6 @@ class _ProfileViewState extends State<ProfileView> {
   bool _editing = false;
   bool _saving = false;
   int _donationAmount = 5;
-  int _downloadsRefresh = 0;
 
   @override
   void initState() {
@@ -45,14 +44,7 @@ class _ProfileViewState extends State<ProfileView> {
     super.dispose();
   }
 
-  Future<BeatsProfile?> _loadProfile() async {
-    final profile = await BeatsProfileService().fetchCurrentProfile();
-    if (profile != null) {
-      // Opportunistic background refresh of everything cacheable.
-      OfflineCacheService().refreshAll(profile.studentId);
-    }
-    return profile;
-  }
+  Future<BeatsProfile?> _loadProfile() => BeatsProfileService().fetchCurrentProfile();
 
   Future<void> _saveName(BeatsProfile profile) async {
     final name = _nameController.text.trim();
@@ -82,7 +74,7 @@ class _ProfileViewState extends State<ProfileView> {
       future: _profile,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: Brand.orange));
+          return const Center(child: CircularProgressIndicator(color: Brand.cyan));
         }
         final profile = snapshot.data;
         if (profile == null) {
@@ -92,6 +84,7 @@ class _ProfileViewState extends State<ProfileView> {
               GlassTile(
                 title: 'Account',
                 icon: Icons.error_outline,
+                iconColor: Brand.red,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -107,9 +100,6 @@ class _ProfileViewState extends State<ProfileView> {
                         onPressed: () => setState(() => _profile = _loadProfile()),
                       ),
                       OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            side: const BorderSide(color: Colors.white)),
                         onPressed: () => AuthService().signOut(),
                         child: const Text('Sign out'),
                       ),
@@ -144,10 +134,18 @@ class _ProfileViewState extends State<ProfileView> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Center(
-            child: CircleAvatar(
-              radius: 44,
-              backgroundColor: Brand.gray200,
-              backgroundImage: const AssetImage('images/default_profile.png'),
+            child: Container(
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: Brand.primaryGradient,
+                boxShadow: Brand.glow(Brand.violet, 0.7),
+              ),
+              child: const CircleAvatar(
+                radius: 44,
+                backgroundColor: Brand.surface,
+                backgroundImage: AssetImage('images/default_profile.png'),
+              ),
             ),
           ),
           const SizedBox(height: 16),
@@ -159,7 +157,7 @@ class _ProfileViewState extends State<ProfileView> {
                   child: TextField(
                     controller: _nameController,
                     autofocus: true,
-                    style: nunito(15, 500, color: Brand.gray900),
+                    style: nunito(15, 500, color: Brand.text),
                     decoration: const InputDecoration(isDense: true),
                   ),
                 ),
@@ -169,7 +167,7 @@ class _ProfileViewState extends State<ProfileView> {
                 else ...[
                   IconButton(
                     tooltip: 'Save',
-                    icon: const Icon(Icons.check, color: Colors.greenAccent),
+                    icon: const Icon(Icons.check, color: Brand.green),
                     onPressed: () => _saveName(profile),
                   ),
                   IconButton(
@@ -222,7 +220,7 @@ class _ProfileViewState extends State<ProfileView> {
   Widget _label(String text) => Padding(
         padding: const EdgeInsets.only(bottom: 4),
         child: Text(text.toUpperCase(),
-            style: nunito(12, 600, color: const Color(0xFFE5E7EB), spacing: 0.6)),
+            style: nunito(12, 600, color: Brand.textSecondary, spacing: 0.6)),
       );
 
   Widget _supportCard(BeatsProfile profile) {
@@ -236,11 +234,11 @@ class _ProfileViewState extends State<ProfileView> {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text('Donate USD 5\$ or more to Vasis Studios and send details to ',
-                  style: nunito(14, 400, color: Brand.gray700)),
+                  style: nunito(14, 400, color: Brand.textSecondary)),
               GestureDetector(
                 onTap: () => _emailDonationReceipt(profile),
                 child: Text(_donationEmail,
-                    style: nunito(14, 700, color: Brand.purpleLight)
+                    style: nunito(14, 700, color: Brand.cyan)
                         .copyWith(decoration: TextDecoration.underline)),
               ),
             ],
@@ -253,9 +251,18 @@ class _ProfileViewState extends State<ProfileView> {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Column(children: [
-                Image.asset('images/upi_qr.png', height: 120, width: 120, fit: BoxFit.contain),
+                // QR codes need a light quiet zone to scan reliably.
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(Brand.radius),
+                    boxShadow: Brand.glow(Brand.cyan, 0.4),
+                  ),
+                  child: Image.asset('images/upi_qr.png', height: 120, width: 120, fit: BoxFit.contain),
+                ),
                 const SizedBox(height: 6),
-                Text('Donate with UPI', style: nunito(13, 600, color: Brand.gray700)),
+                Text('Donate with UPI', style: nunito(13, 600, color: Brand.textSecondary)),
               ]),
               Column(children: [
                 DropdownButton<int>(
@@ -301,63 +308,33 @@ class _ProfileViewState extends State<ProfileView> {
     }
   }
 
+  /// Read-only: what the background download has put on this device.
+  /// Tracks are managed automatically (see DownloadManager.syncAll), so
+  /// there's nothing to download or remove by hand.
   Widget _downloadsCard() {
     final downloads = DownloadManager();
     return PortalCard(
       header: 'Downloaded content',
-      child: FutureBuilder<List<Map<String, dynamic>>>(
-        key: ValueKey(_downloadsRefresh),
-        future: downloads.getDownloadedTracks(),
-        builder: (context, snapshot) {
-          final tracks = snapshot.data;
-          if (tracks == null) return const Center(child: CircularProgressIndicator());
-          if (tracks.isEmpty) return const Text('Nothing downloaded yet.');
-          final anyStale = tracks.any(DownloadManager.isStale);
-          final totalBytes =
-              tracks.fold<int>(0, (sum, t) => sum + ((t['bytes_downloaded'] as int?) ?? 0));
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('${tracks.length} track${tracks.length == 1 ? '' : 's'} · '
-                  '${(totalBytes / 1024 / 1024).toStringAsFixed(1)} MB used',
-                  style: nunito(13, 600, color: Brand.gray600)),
-              const SizedBox(height: 8),
-              for (final t in tracks)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(t['title'] as String? ?? '',
-                      style: nunito(14, 600, color: Brand.gray900)),
-                  subtitle: Text(
-                      '${((t['bytes_downloaded'] as int? ?? 0) / 1024 / 1024).toStringAsFixed(1)} MB',
-                      style: nunito(12, 400, color: Brand.gray500)),
-                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                    if (DownloadManager.isStale(t))
-                      const StatusBadge('Update available', kind: BadgeKind.amber, icon: Icons.update),
-                    IconButton(
-                      tooltip: 'Remove download',
-                      icon: const Icon(Icons.delete_outline, color: Brand.error),
-                      onPressed: () async {
-                        await downloads.deleteDownload(t['id'] as String);
-                        if (mounted) setState(() => _downloadsRefresh++);
-                      },
-                    ),
-                  ]),
-                ),
-              if (anyStale)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: GradientButton(
-                    label: 'Update all',
-                    icon: Icons.update,
-                    onPressed: () async {
-                      await downloads.updateStaleTracks();
-                      if (mounted) setState(() => _downloadsRefresh++);
-                    },
-                  ),
-                ),
-            ],
-          );
-        },
+      child: ValueListenableBuilder<DownloadSyncStatus>(
+        valueListenable: downloads.status,
+        builder: (context, status, _) => FutureBuilder<List<Map<String, dynamic>>>(
+          key: ValueKey(status.complete),
+          future: downloads.getDownloadedTracks(),
+          builder: (context, snapshot) {
+            final tracks = snapshot.data;
+            if (tracks == null) return const Center(child: CircularProgressIndicator());
+            final totalBytes =
+                tracks.fold<int>(0, (sum, t) => sum + ((t['bytes_downloaded'] as int?) ?? 0));
+            final total = status.total;
+            return Text(
+              total == 0 && tracks.isEmpty
+                  ? 'Nothing downloaded yet.'
+                  : '${status.complete} of $total track${total == 1 ? '' : 's'} saved on this '
+                      'device · ${(totalBytes / 1024 / 1024).toStringAsFixed(1)} MB used',
+              style: nunito(14, 500, color: Brand.textSecondary),
+            );
+          },
+        ),
       ),
     );
   }
@@ -380,10 +357,10 @@ class _ProfileViewState extends State<ProfileView> {
                   title: Text(
                     '${((s['duration_seconds'] as int? ?? 0) / 60).round()} min at '
                     '${s['tempo_bpm'] ?? '—'} BPM',
-                    style: nunito(14, 600, color: Brand.gray900),
+                    style: nunito(14, 600, color: Brand.text),
                   ),
                   subtitle: Text(_when(s['started_at'] as String?),
-                      style: nunito(12, 400, color: Brand.gray500)),
+                      style: nunito(12, 400, color: Brand.textMuted)),
                 ),
             ],
           );
@@ -405,8 +382,6 @@ class _ProfileViewState extends State<ProfileView> {
       runSpacing: 12,
       children: [
         OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.white, side: const BorderSide(color: Colors.white70)),
           onPressed: () => Navigator.push(
               context, MaterialPageRoute(builder: (_) => const ChangePasswordScreen())),
           icon: const Icon(Icons.lock_outline),
@@ -414,15 +389,11 @@ class _ProfileViewState extends State<ProfileView> {
         ),
         if (storeRatingSupported)
           OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.white, side: const BorderSide(color: Colors.white70)),
             onPressed: _showRatingDialog,
             icon: const Icon(Icons.star_outline),
             label: const Text('Rate the app'),
           ),
         OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.white, side: const BorderSide(color: Colors.white70)),
           onPressed: () => launchSupportEmail(context, subject: 'Vasis Beats support'),
           icon: const Icon(Icons.support_agent),
           label: const Text('Contact support'),
@@ -464,7 +435,7 @@ class _ProfileViewState extends State<ProfileView> {
                   (i) => IconButton(
                     tooltip: '${i + 1} star${i == 0 ? '' : 's'}',
                     icon: Icon(i < rating ? Icons.star : Icons.star_border,
-                        color: Colors.amber, size: 32),
+                        color: Brand.amber, size: 32),
                     onPressed: () => setDialogState(() => rating = i + 1.0),
                   ),
                 ),

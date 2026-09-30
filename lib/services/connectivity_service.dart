@@ -5,14 +5,13 @@ import 'package:flutter/foundation.dart';
 
 import '../platform_support.dart';
 import 'beats_profile_service.dart';
-import 'download_manager.dart';
 import 'error_log_service.dart';
 import 'offline_cache_service.dart';
 
 /// Tracks whether the device has a network connection and, when one comes
-/// back, catches up on everything that was waiting for it: failed
-/// downloads, un-uploaded practice sessions, queued error-log rows and a
-/// fresh catalog/favorites/history pull.
+/// back, catches up on everything that was waiting for it: a fresh
+/// catalog/favorites/history pull (which also resumes the background track
+/// downloads), un-uploaded practice sessions and queued error-log rows.
 ///
 /// Native platforms only; the web build is always-online by nature.
 class ConnectivityService {
@@ -43,7 +42,6 @@ class ConnectivityService {
         await OfflineCacheService().refreshAll(profile.studentId);
       }
       await ErrorLogService.instance.flush();
-      await DownloadManager().retryFailedDownloads();
     } catch (e) {
       debugPrint('⚠️ Catch-up after reconnect failed: $e');
     }

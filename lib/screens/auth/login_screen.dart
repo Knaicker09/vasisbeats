@@ -210,12 +210,12 @@ class _LoginScreenState extends State<LoginScreen> {
           const SizedBox(height: 16),
           Row(
             children: [
-              const Expanded(child: Divider(color: Brand.purple300)),
+              const Expanded(child: Divider(color: Brand.border)),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text('or', style: nunito(13, 500, color: Brand.gray600)),
+                child: Text('or', style: nunito(13, 500, color: Brand.textMuted)),
               ),
-              const Expanded(child: Divider(color: Brand.purple300)),
+              const Expanded(child: Divider(color: Brand.border)),
             ],
           ),
           const SizedBox(height: 16),
@@ -229,20 +229,20 @@ class _LoginScreenState extends State<LoginScreen> {
             alignment: WrapAlignment.center,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Text("Don't have an account? ", style: nunito(14, 400, color: Brand.gray600)),
+              Text("Don't have an account? ", style: nunito(14, 400, color: Brand.textMuted)),
               GestureDetector(
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const RegisterScreen()),
                 ),
                 child: Text('Create an account',
-                    style: nunito(14, 700, color: Brand.purpleLight)),
+                    style: nunito(14, 700, color: Brand.cyan)),
               ),
             ],
           ),
           TextButton(
             onPressed: () => launchSupportEmail(context, subject: 'Vasis Beats sign-in help'),
-            child: Text('Contact support', style: nunito(14, 600, color: Brand.gray600)),
+            child: Text('Contact support', style: nunito(14, 600, color: Brand.textMuted)),
           ),
         ],
       ),

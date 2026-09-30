@@ -36,9 +36,12 @@ class _BrowseData {
 }
 
 /// Practice tab: browse practice sets by tala (locked ones marked for the
-/// free tier), then the player — tempo with beginner-friendly labels, a beat
-/// indicator, loop, instrument mix, practice timer, and per-track
-/// downloads. Tempo, loop, timer and mix are remembered per practice set.
+/// free tier), then the player console — beat lights, LOOP / PLAY / TIMER
+/// pads, a BPM stepper and slider with beginner-friendly tempo labels, and
+/// the instrument mix. Tempo, loop, timer
+/// and mix are remembered per practice set. Tracks arrive through the
+/// background download (DownloadManager.syncAll); there are no per-track
+/// download controls.
 class PracticeView extends StatefulWidget {
   const PracticeView({super.key});
 
@@ -57,7 +60,7 @@ class _PracticeViewState extends State<PracticeView> {
   Set<String> _favorites = {};
   bool _loading = false;
   int _lastRequestId = 0;
-  int _trackRefresh = 0;
+  int _downloadedCount = 0;
 
   @override
   void initState() {
@@ -65,6 +68,7 @@ class _PracticeViewState extends State<PracticeView> {
     _browse = _loadBrowse();
     AppNav.practiceRequest.addListener(_onRequest);
     AppNav.tab.addListener(_onTab);
+    _downloads.status.addListener(_onDownloadStatus);
     _onRequest();
   }
 
@@ -72,7 +76,23 @@ class _PracticeViewState extends State<PracticeView> {
   void dispose() {
     AppNav.practiceRequest.removeListener(_onRequest);
     AppNav.tab.removeListener(_onTab);
+    _downloads.status.removeListener(_onDownloadStatus);
     super.dispose();
+  }
+
+  /// As background downloads land: refresh the list's download badges, or
+  /// — if the open set had nothing playable yet — load it now that it may.
+  /// A set that's already playing is left alone.
+  void _onDownloadStatus() {
+    final complete = _downloads.status.value.complete;
+    if (complete == _downloadedCount || !mounted) return;
+    _downloadedCount = complete;
+    final current = _current;
+    if (current == null) {
+      setState(() => _browse = _loadBrowse());
+    } else if (_controller.stemVolumesNotifier.value.isEmpty && !_loading) {
+      _controller.loadPracticeSet(current).catchError((_) {});
+    }
   }
 
   void _onTab() {
@@ -163,8 +183,9 @@ class _PracticeViewState extends State<PracticeView> {
       title: 'Practice',
       subtitle: current == null ? 'Choose a practice set' : null,
       onRefresh: current == null ? _refresh : null,
+      maxWidth: current == null ? 1100 : 640,
       children: [
-        if (_loading) const LinearProgressIndicator(color: Brand.orange),
+        if (_loading) const LinearProgressIndicator(),
         if (current == null)
           _BrowseList(future: _browse, onOpen: _open, onLocked: (s) {
             showLockedDialog(context, practiceSetTitle: s['title'] as String?);
@@ -178,92 +199,58 @@ class _PracticeViewState extends State<PracticeView> {
   List<Widget> _playerChildren(Map<String, dynamic> set) {
     final isFavorite = _favorites.contains(set['id']);
     return [
-      Align(
-        alignment: Alignment.centerLeft,
-        child: TextButton.icon(
-          onPressed: _close,
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          label: Text('All practice sets', style: nunito(14, 600, color: Colors.white)),
-        ),
+      Row(
+        children: [
+          TextButton.icon(
+            onPressed: _close,
+            icon: const Icon(Icons.arrow_back, size: 18),
+            label: Text('ALL SETS', style: sora(12, 700, spacing: 1.2)),
+          ),
+          const Spacer(),
+          IconButton(
+            tooltip: isFavorite ? 'Remove from favorites' : 'Add to favorites',
+            icon: Icon(isFavorite ? Icons.star_rounded : Icons.star_outline_rounded,
+                color: isFavorite ? Brand.amber : Brand.textMuted, size: 28),
+            onPressed: () => _toggleFavorite(set['id'] as String),
+          ),
+        ],
       ),
       ValueListenableBuilder<Map<String, double>>(
         valueListenable: _controller.stemVolumesNotifier,
         builder: (context, stems, _) {
-          final hasAudio = stems.isNotEmpty;
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              GlassTile(
-                title: set['title'] as String? ?? '',
-                icon: Icons.music_note,
-                iconColor: Brand.purple,
-                child: hasAudio
-                    ? _PlayerControls(
-                        controller: _controller,
-                        set: set,
-                        tala: _currentTala,
-                        isFavorite: isFavorite,
-                        onToggleFavorite: () => _toggleFavorite(set['id'] as String),
-                      )
-                    : Text(
-                        offlineSupported
-                            ? 'Download this practice set below to play it, on or offline.'
-                            : 'No tracks are available for this practice set yet.',
-                      ),
-              ),
-              if (hasAudio) ...[
+          if (stems.isEmpty) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _SetHeader(controller: _controller, set: set, tala: _currentTala),
                 const SizedBox(height: 16),
-                PortalCard(
-                  header: 'Instrument mix',
-                  child: Column(
-                    children: [
-                      for (final entry in stems.entries)
-                        Row(
-                          children: [
-                            SizedBox(
-                              width: 88,
-                              child: Text(_instrumentLabels[entry.key] ?? entry.key,
-                                  style: nunito(14, 600, color: Brand.gray700)),
-                            ),
-                            Expanded(
-                              child: Slider(
-                                value: entry.value,
-                                semanticFormatterCallback: (v) => '${(v * 100).round()} percent',
-                                onChanged: (v) => _controller.setStemVolume(entry.key, v),
-                              ),
-                            ),
-                            SizedBox(
-                              width: 40,
-                              child: Text('${(entry.value * 100).round()}%',
-                                  textAlign: TextAlign.right,
-                                  style: nunito(13, 500, color: Brand.gray600)),
-                            ),
-                          ],
-                        ),
-                    ],
+                GlassTile(
+                  title: offlineSupported ? 'Downloading' : 'No tracks yet',
+                  icon: offlineSupported ? Icons.downloading : Icons.music_off_outlined,
+                  iconColor: Brand.blue,
+                  child: Text(
+                    offlineSupported
+                        ? 'This practice set is still downloading. It will be ready '
+                            'to play here as soon as it finishes.'
+                        : 'No tracks are available for this practice set yet.',
                   ),
                 ),
-                const SizedBox(height: 16),
-                PortalCard(header: 'Practice timer', child: _TimerSection(controller: _controller)),
               ],
-              if (offlineSupported) ...[
-                const SizedBox(height: 16),
-                _DownloadsPanel(
-                  key: ValueKey('${set['id']}-$_trackRefresh'),
-                  practiceSetId: set['id'] as String,
-                  onChanged: () async {
-                    await _controller.loadPracticeSet(set);
-                    if (mounted) setState(() => _trackRefresh++);
-                  },
-                ),
-              ],
-            ],
-          );
+            );
+          }
+          return _Console(controller: _controller, set: set, tala: _currentTala, stems: stems);
         },
       ),
     ];
   }
 }
+
+/// Neon accent per tempo tier, used on set cards and the player header.
+Color _tempoColor(Object? tempoLabel) => switch (tempoLabel) {
+      'beginner' => Brand.cyan,
+      'performance' => Brand.pink,
+      _ => Brand.violet,
+    };
 
 class _BrowseList extends StatelessWidget {
   final Future<_BrowseData> future;
@@ -280,13 +267,14 @@ class _BrowseList extends StatelessWidget {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Padding(
             padding: EdgeInsets.all(32),
-            child: Center(child: CircularProgressIndicator(color: Brand.orange)),
+            child: Center(child: CircularProgressIndicator()),
           );
         }
         if (snapshot.hasError) {
           return const GlassTile(
             title: 'Could not load practice sets',
             icon: Icons.error_outline,
+            iconColor: Brand.red,
             child: Text('Pull down to try again.'),
           );
         }
@@ -305,7 +293,7 @@ class _BrowseList extends StatelessWidget {
             for (final tala in data.talas)
               if (data.sets.any((s) => s['tala_id'] == tala['id'])) ...[
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 8, top: 4),
+                  padding: const EdgeInsets.only(bottom: 12, top: 4),
                   child: Row(
                     children: [
                       if (tala['image_asset'] != null)
@@ -313,13 +301,17 @@ class _BrowseList extends StatelessWidget {
                           padding: const EdgeInsets.only(right: 10),
                           child: Image.asset(
                             'images/${tala['image_asset']}',
-                            width: 36,
-                            height: 36,
+                            width: 32,
+                            height: 32,
                             errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                           ),
                         ),
-                      Text(tala['name'] as String? ?? '',
-                          style: nunito(20, 700, color: Colors.white)),
+                      GradientText(tala['name'] as String? ?? '', style: sora(20, 800, spacing: -0.3)),
+                      if (tala['beats_count'] != null) ...[
+                        const SizedBox(width: 10),
+                        Text('${tala['beats_count']} BEATS',
+                            style: sora(11, 700, color: Brand.textMuted, spacing: 1.2)),
+                      ],
                     ],
                   ),
                 ),
@@ -333,7 +325,7 @@ class _BrowseList extends StatelessWidget {
                       onTap: () => (isPaidSet(set) && !data.isPaid) ? onLocked(set) : onOpen(set),
                     ),
                   ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
               ],
           ],
         );
@@ -353,59 +345,67 @@ class _SetCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = summary;
+    final accent = locked ? Brand.amber : _tempoColor(set['tempo_label']);
     final badges = <Widget>[
       if (locked) const StatusBadge('Supporters', kind: BadgeKind.amber, icon: Icons.lock_outline),
       if (offlineSupported && s != null && s.total > 0) ...[
         if (s.failed > 0)
           const StatusBadge('Download failed', kind: BadgeKind.red, icon: Icons.error_outline)
-        else if (s.stale > 0)
-          const StatusBadge('Update available', kind: BadgeKind.amber, icon: Icons.update)
         else if (s.complete == s.total)
           const StatusBadge('Downloaded', kind: BadgeKind.green, icon: Icons.check_circle_outline)
         else
           StatusBadge('${s.complete}/${s.total} downloaded', kind: BadgeKind.gray),
       ],
     ];
+    final radius = BorderRadius.circular(Brand.cardRadius);
 
     return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(Brand.radius),
-      elevation: 2,
+      color: Brand.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: radius,
+        side: BorderSide(color: accent.withValues(alpha: 0.35)),
+      ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(Brand.radius),
+        borderRadius: radius,
+        splashColor: accent.withValues(alpha: 0.15),
+        highlightColor: accent.withValues(alpha: 0.08),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Row(
             children: [
               Container(
-                width: 40,
-                height: 40,
-                decoration: const BoxDecoration(color: Brand.purple, shape: BoxShape.circle),
-                child: Icon(locked ? Icons.lock_outline : Icons.music_note,
-                    size: 20, color: Colors.white),
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(Brand.radius),
+                  border: Border.all(color: accent.withValues(alpha: 0.8), width: 1.5),
+                  boxShadow: Brand.glow(accent, 0.5),
+                ),
+                child: Icon(locked ? Icons.lock_outline : Icons.graphic_eq_rounded, size: 22, color: accent),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(set['title'] as String? ?? '',
-                        style: nunito(16, 600, color: Brand.gray900)),
+                    Text(set['title'] as String? ?? '', style: sora(15, 700, color: Brand.text)),
+                    const SizedBox(height: 2),
                     Text(
                       '${_tempoLabelText[set['tempo_label']] ?? ''} · '
                       '${set['bpm_min']}–${set['bpm_max']} BPM',
-                      style: nunito(13, 400, color: Brand.gray600),
+                      style: nunito(13, 500, color: Brand.textMuted),
                     ),
                     if (badges.isNotEmpty)
                       Padding(
-                        padding: const EdgeInsets.only(top: 6),
+                        padding: const EdgeInsets.only(top: 8),
                         child: Wrap(spacing: 6, runSpacing: 4, children: badges),
                       ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: Brand.gray400),
+              Icon(Icons.chevron_right, color: accent.withValues(alpha: 0.8)),
             ],
           ),
         ),
@@ -414,109 +414,349 @@ class _SetCard extends StatelessWidget {
   }
 }
 
-class _PlayerControls extends StatelessWidget {
+/// The player's title card: set name, live BPM, tala and tempo tier, in a
+/// neon frame tinted by the tempo tier.
+class _SetHeader extends StatelessWidget {
   final PracticeController controller;
   final Map<String, dynamic> set;
   final Map<String, dynamic>? tala;
-  final bool isFavorite;
-  final VoidCallback onToggleFavorite;
 
-  const _PlayerControls({
-    required this.controller,
-    required this.set,
-    required this.tala,
-    required this.isFavorite,
-    required this.onToggleFavorite,
-  });
+  const _SetHeader({required this.controller, required this.set, required this.tala});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = _tempoColor(set['tempo_label']);
+    final details = [
+      if (tala?['name'] != null) tala!['name'] as String,
+      _tempoLabelText[set['tempo_label']] ?? 'Practice',
+    ].join(' · ');
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color.alphaBlend(accent.withValues(alpha: 0.14), Brand.surface), Brand.surface],
+        ),
+        borderRadius: BorderRadius.circular(Brand.cardRadius),
+        border: Border.all(color: accent.withValues(alpha: 0.85), width: 1.5),
+        boxShadow: Brand.glow(accent, 0.6),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.music_note_rounded, color: accent, size: 30),
+          const SizedBox(height: 6),
+          Text(set['title'] as String? ?? '',
+              textAlign: TextAlign.center, style: sora(20, 800, color: Brand.text, spacing: -0.3)),
+          const SizedBox(height: 4),
+          ValueListenableBuilder<int>(
+            valueListenable: controller.currentBpmNotifier,
+            builder: (context, bpm, _) => bpm == 0
+                ? const SizedBox.shrink()
+                : Text('$bpm BPM', style: sora(15, 700, color: accent, spacing: 0.5)),
+          ),
+          const SizedBox(height: 2),
+          Text(details, textAlign: TextAlign.center, style: nunito(13, 600, color: Brand.textMuted)),
+        ],
+      ),
+    );
+  }
+}
+
+/// The practice console: title card, beat lights, LOOP / PLAY / TIMER pads,
+/// the tempo strip and the instrument mixer.
+class _Console extends StatelessWidget {
+  final PracticeController controller;
+  final Map<String, dynamic> set;
+  final Map<String, dynamic>? tala;
+  final Map<String, double> stems;
+
+  const _Console({required this.controller, required this.set, required this.tala, required this.stems});
+
+  String _fmt(Duration d) => '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
+
+  void _openTimer(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('PRACTICE TIMER', style: sora(13, 800, color: Brand.pink, spacing: 1.6)),
+              const SizedBox(height: 14),
+              _TimerSection(controller: controller),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final beats = (tala?['beats_count'] as int?) ?? 4;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _SetHeader(controller: controller, set: set, tala: tala),
+        const SizedBox(height: 22),
+        ValueListenableBuilder<bool>(
+          valueListenable: controller.isPlayingNotifier,
+          builder: (context, playing, _) => ValueListenableBuilder<int>(
+            valueListenable: controller.currentBpmNotifier,
+            builder: (context, bpm, _) => BeatPulseIndicator(bpm: bpm, beatsCount: beats, isPlaying: playing),
+          ),
+        ),
+        const SizedBox(height: 22),
+        SizedBox(
+          height: 132,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: controller.loopEnabledNotifier,
+                  builder: (context, loop, _) => NeonPad(
+                    label: 'Loop',
+                    semanticLabel: loop ? 'Loop is on' : 'Loop is off',
+                    icon: loop ? Icons.repeat_one_rounded : Icons.repeat_rounded,
+                    color: Brand.violet,
+                    active: loop,
+                    onTap: controller.toggleLoop,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: controller.isPlayingNotifier,
+                  builder: (context, playing, _) => NeonPad(
+                    label: playing ? 'Pause' : 'Play',
+                    icon: playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                    iconSize: 46,
+                    color: Brand.cyan,
+                    active: playing,
+                    breathing: playing,
+                    onTap: playing ? controller.pause : controller.play,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ValueListenableBuilder<int?>(
+                  valueListenable: controller.timerMinutesNotifier,
+                  builder: (context, minutes, _) => ValueListenableBuilder<Duration?>(
+                    valueListenable: controller.timerRemainingNotifier,
+                    builder: (context, remaining, _) => NeonPad(
+                      label: 'Timer',
+                      semanticLabel: 'Practice timer',
+                      icon: minutes == null ? Icons.timer_outlined : null,
+                      value: minutes == null ? null : (remaining == null ? '${minutes}m' : _fmt(remaining)),
+                      color: Brand.pink,
+                      active: minutes != null,
+                      onTap: () => _openTimer(context),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        _TempoStrip(controller: controller, set: set),
+        const SizedBox(height: 16),
+        _MixerStrip(controller: controller, stems: stems),
+      ],
+    );
+  }
+}
+
+/// A console strip: dark glass panel with a small uppercase label.
+class _Strip extends StatelessWidget {
+  final String label;
+  final Widget? trailing;
+  final Widget child;
+  const _Strip({required this.label, required this.child, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      decoration: BoxDecoration(
+        color: Brand.surface.withValues(alpha: 0.86),
+        borderRadius: BorderRadius.circular(Brand.cardRadius),
+        border: Border.all(color: Brand.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text(label, style: sora(11, 800, color: Brand.textMuted, spacing: 1.6)),
+              const Spacer(),
+              if (trailing != null) trailing!,
+            ],
+          ),
+          const SizedBox(height: 8),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+/// BPM − / value / + stepper (tap ±1, long-press ±5) over the tempo slider.
+class _TempoStrip extends StatelessWidget {
+  final PracticeController controller;
+  final Map<String, dynamic> set;
+  const _TempoStrip({required this.controller, required this.set});
 
   @override
   Widget build(BuildContext context) {
     final minBpm = (set['bpm_min'] as num?)?.toDouble() ?? 60;
     final maxBpm = (set['bpm_max'] as num?)?.toDouble() ?? 120;
-    final beats = (tala?['beats_count'] as int?) ?? 4;
+    final adjustable = maxBpm > minBpm;
 
-    return Column(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            IconButton(
-              tooltip: isFavorite ? 'Remove from favorites' : 'Add to favorites',
-              icon: Icon(isFavorite ? Icons.star : Icons.star_border,
-                  color: isFavorite ? Colors.amber : Colors.white),
-              onPressed: onToggleFavorite,
-            ),
-          ],
-        ),
-        ValueListenableBuilder<bool>(
-          valueListenable: controller.isPlayingNotifier,
-          builder: (context, playing, _) => ValueListenableBuilder<int>(
-            valueListenable: controller.currentBpmNotifier,
-            builder: (context, bpm, _) => Column(
-              children: [
-                BeatPulseIndicator(bpm: bpm, beatsCount: beats, isPlaying: playing),
-                const SizedBox(height: 8),
-                Text('$bpm BPM', style: nunito(36, 700, color: Colors.white)),
-                const SizedBox(height: 4),
-                StatusBadge(_tempoLabelText[set['tempo_label']] ?? 'Practice', kind: BadgeKind.purple),
-                if (maxBpm > minBpm)
-                  Slider(
-                    value: bpm.toDouble().clamp(minBpm, maxBpm),
-                    min: minBpm,
-                    max: maxBpm,
-                    divisions: (maxBpm - minBpm) <= 200 ? (maxBpm - minBpm).round() : null,
-                    label: '$bpm BPM',
-                    onChanged: (v) => controller.setBpm(v.round()),
+    return ValueListenableBuilder<int>(
+      valueListenable: controller.currentBpmNotifier,
+      builder: (context, bpm, _) {
+        void step(int delta) =>
+            controller.setBpm((bpm + delta).clamp(minBpm.round(), maxBpm.round()));
+        return _Strip(
+          label: 'TEMPO',
+          trailing: StatusBadge(_tempoLabelText[set['tempo_label']] ?? 'Practice', kind: BadgeKind.purple),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  _StepButton(
+                    icon: Icons.remove_rounded,
+                    tooltip: 'Slower',
+                    onTap: adjustable && bpm > minBpm ? () => step(-1) : null,
+                    onLongPress: adjustable && bpm > minBpm ? () => step(-5) : null,
                   ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    ValueListenableBuilder<bool>(
-                      valueListenable: controller.loopEnabledNotifier,
-                      builder: (context, loop, _) => Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            iconSize: 30,
-                            tooltip: loop ? 'Loop is on' : 'Loop is off',
-                            icon: Icon(loop ? Icons.repeat_one : Icons.repeat,
-                                color: loop ? Brand.orangeBright : Colors.white70),
-                            onPressed: controller.toggleLoop,
-                          ),
-                          Text(loop ? 'Loop on' : 'Loop off',
-                              style: nunito(12, 600, color: Colors.white)),
-                        ],
-                      ),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        Text('$bpm', style: sora(40, 800, color: Brand.text, height: 1.1)),
+                        Text('BPM', style: sora(11, 800, color: Brand.cyan, spacing: 2)),
+                      ],
                     ),
-                    const SizedBox(width: 28),
-                    Semantics(
-                      button: true,
-                      label: playing ? 'Pause' : 'Play',
-                      child: GestureDetector(
-                        onTap: playing ? controller.pause : controller.play,
-                        child: Container(
-                          width: 76,
-                          height: 76,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: Brand.primaryGradient,
-                            boxShadow: Brand.cardShadow,
-                          ),
-                          child: Icon(playing ? Icons.pause : Icons.play_arrow,
-                              size: 42, color: Colors.white),
-                        ),
-                      ),
+                  ),
+                  _StepButton(
+                    icon: Icons.add_rounded,
+                    tooltip: 'Faster',
+                    onTap: adjustable && bpm < maxBpm ? () => step(1) : null,
+                    onLongPress: adjustable && bpm < maxBpm ? () => step(5) : null,
+                  ),
+                ],
+              ),
+              if (adjustable) ...[
+                const SizedBox(height: 4),
+                Slider(
+                  value: bpm.toDouble().clamp(minBpm, maxBpm),
+                  min: minBpm,
+                  max: maxBpm,
+                  divisions: (maxBpm - minBpm) <= 200 ? (maxBpm - minBpm).round() : null,
+                  label: '$bpm BPM',
+                  onChanged: (v) => controller.setBpm(v.round()),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Row(
+                    children: [
+                      Text('${minBpm.round()}', style: sora(11, 600, color: Brand.textFaint)),
+                      const Spacer(),
+                      Text('${maxBpm.round()}', style: sora(11, 600, color: Brand.textFaint)),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _StepButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+  const _StepButton({required this.icon, required this.tooltip, this.onTap, this.onLongPress});
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Brand.surfaceRaised,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Brand.radius),
+          side: BorderSide(color: enabled ? Brand.borderStrong : Brand.border),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          borderRadius: BorderRadius.circular(Brand.radius),
+          child: SizedBox(
+            width: 56,
+            height: 56,
+            child: Icon(icon, size: 28, color: enabled ? Brand.text : Brand.textFaint),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MixerStrip extends StatelessWidget {
+  final PracticeController controller;
+  final Map<String, double> stems;
+  const _MixerStrip({required this.controller, required this.stems});
+
+  @override
+  Widget build(BuildContext context) {
+    return _Strip(
+      label: 'MIX',
+      child: Column(
+        children: [
+          for (final entry in stems.entries)
+            Row(
+              children: [
+                SizedBox(
+                  width: 84,
+                  child: Text((_instrumentLabels[entry.key] ?? entry.key).toUpperCase(),
+                      overflow: TextOverflow.ellipsis,
+                      style: sora(11, 700, color: Brand.textSecondary, spacing: 1)),
+                ),
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(activeTrackColor: Brand.violet),
+                    child: Slider(
+                      value: entry.value,
+                      semanticFormatterCallback: (v) => '${(v * 100).round()} percent',
+                      onChanged: (v) => controller.setStemVolume(entry.key, v),
                     ),
-                    const SizedBox(width: 28),
-                    const SizedBox(width: 48),
-                  ],
+                  ),
+                ),
+                SizedBox(
+                  width: 44,
+                  child: Text('${(entry.value * 100).round()}%',
+                      textAlign: TextAlign.right, style: sora(12, 700, color: Brand.text)),
                 ),
               ],
             ),
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -542,173 +782,17 @@ class _TimerSection extends StatelessWidget {
               onSelected: controller.selectTimer,
               onCancel: controller.cancelTimer,
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             Text(
               minutes == null
                   ? 'No timer set.'
                   : remaining == null
                       ? 'Timer set for $minutes min — it counts down while audio plays.'
                       : '${_fmt(remaining)} remaining',
-              style: nunito(13, 500, color: Brand.gray600),
+              style: nunito(13, 600, color: Brand.textMuted),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// Per-track download management for a practice set: status, progress,
-/// retry, update (when a track changed on the server) and download-all.
-class _DownloadsPanel extends StatefulWidget {
-  final String practiceSetId;
-  final Future<void> Function() onChanged;
-
-  const _DownloadsPanel({super.key, required this.practiceSetId, required this.onChanged});
-
-  @override
-  State<_DownloadsPanel> createState() => _DownloadsPanelState();
-}
-
-class _DownloadsPanelState extends State<_DownloadsPanel> {
-  final _downloads = DownloadManager();
-  final _cache = OfflineCacheService();
-  late Future<List<Map<String, dynamic>>> _tracks;
-  bool _busy = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _tracks = _cache.getCachedTracks(widget.practiceSetId);
-  }
-
-  Future<void> _run(Future<void> Function() action) async {
-    setState(() => _busy = true);
-    try {
-      await action();
-    } finally {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _tracks = _cache.getCachedTracks(widget.practiceSetId);
-        });
-      }
-    }
-    await widget.onChanged();
-  }
-
-  Future<void> _downloadAll() => _run(() async {
-        final failed = await _downloads.downloadPracticeSet(widget.practiceSetId);
-        if (failed > 0 && mounted) {
-          showBrandSnack(context, '$failed track${failed == 1 ? '' : 's'} could not be downloaded.');
-        }
-      });
-
-  Future<void> _retry(String id) => _run(() => _downloads.downloadTrack(id, userInitiated: true));
-
-  Future<void> _update(String id) => _run(() async {
-        await _downloads.deleteDownload(id);
-        await _downloads.downloadTrack(id, userInitiated: true);
-      });
-
-  Future<void> _delete(String id) => _run(() => _downloads.deleteDownload(id));
-
-  @override
-  Widget build(BuildContext context) {
-    return PortalCard(
-      header: 'Downloads',
-      child: FutureBuilder<List<Map<String, dynamic>>>(
-        future: _tracks,
-        builder: (context, snapshot) {
-          final tracks = snapshot.data;
-          if (tracks == null) return const Center(child: CircularProgressIndicator());
-          if (tracks.isEmpty) return const Text('This practice set has no tracks yet.');
-
-          final allDone = tracks.every(
-              (t) => t['download_status'] == 'complete' && !DownloadManager.isStale(t));
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ValueListenableBuilder<Map<String, double>>(
-                valueListenable: _downloads.progress,
-                builder: (context, progress, _) => Column(
-                  children: [
-                    for (final t in tracks) _trackRow(t, progress[t['id']]),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              if (!allDone)
-                GradientButton(
-                  label: 'Download all',
-                  icon: Icons.download,
-                  loading: _busy,
-                  onPressed: _busy ? null : _downloadAll,
-                ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _trackRow(Map<String, dynamic> t, double? progress) {
-    final id = t['id'] as String;
-    final status = t['download_status'] as String? ?? 'not_downloaded';
-    final stale = DownloadManager.isStale(t);
-
-    Widget trailing;
-    if (progress != null || status == 'downloading') {
-      trailing = SizedBox(
-        width: 120,
-        child: Row(
-          children: [
-            Expanded(child: LinearProgressIndicator(value: progress)),
-            const SizedBox(width: 8),
-            Text('${((progress ?? 0) * 100).round()}%', style: nunito(12, 600)),
-          ],
-        ),
-      );
-    } else if (status == 'failed') {
-      trailing = Row(mainAxisSize: MainAxisSize.min, children: [
-        const StatusBadge('Failed', kind: BadgeKind.red, icon: Icons.error_outline),
-        TextButton(onPressed: _busy ? null : () => _retry(id), child: const Text('Retry')),
-      ]);
-    } else if (stale) {
-      trailing = Row(mainAxisSize: MainAxisSize.min, children: [
-        const StatusBadge('Update available', kind: BadgeKind.amber, icon: Icons.update),
-        TextButton(onPressed: _busy ? null : () => _update(id), child: const Text('Update')),
-      ]);
-    } else if (status == 'complete') {
-      trailing = Row(mainAxisSize: MainAxisSize.min, children: [
-        const StatusBadge('Downloaded', kind: BadgeKind.green, icon: Icons.check_circle_outline),
-        IconButton(
-          tooltip: 'Remove download',
-          icon: const Icon(Icons.delete_outline, color: Brand.error),
-          onPressed: _busy ? null : () => _delete(id),
-        ),
-      ]);
-    } else {
-      trailing = TextButton(
-          onPressed: _busy ? null : () => _retry(id), child: const Text('Download'));
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(t['title'] as String? ?? '', style: nunito(14, 600, color: Brand.gray900)),
-                Text(_instrumentLabels[t['instrument']] ?? '${t['instrument']}',
-                    style: nunito(12, 400, color: Brand.gray500)),
-              ],
-            ),
-          ),
-          trailing,
-        ],
       ),
     );
   }

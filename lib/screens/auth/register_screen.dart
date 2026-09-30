@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:phone_form_field/phone_form_field.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/auth_service.dart';
@@ -7,16 +6,11 @@ import '../../ui/brand.dart';
 import '../../ui/widgets.dart';
 import 'otp_verification_view.dart';
 
-/// Currency by country, exactly as the website derives it from the phone
-/// number's country (anything else is USD).
-const Map<String, String> _currencyByCountry = {
-  'US': 'USD', 'GB': 'GBP', 'BR': 'BRL', 'IN': 'INR', 'CA': 'CAD',
-  'AU': 'AUD', 'JP': 'JPY', 'ES': 'EUR', 'PT': 'EUR',
-};
-
-/// Create an account — same form, rules and metadata as the website's
-/// registration, so the account works there immediately (and the person
-/// finishes their profile there, on first visit, if they want to).
+/// Create an account — a shorter form than the website's (first/last name,
+/// email, password; no phone, spiritual name or language choice) with the
+/// same rules and metadata keys, so the account works there immediately
+/// (and the person finishes their profile there, on first visit, if they
+/// want to).
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
@@ -27,14 +21,12 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen> {
   final _auth = AuthService();
   final _formKey = GlobalKey<FormState>();
-  final _legalName = TextEditingController();
-  final _spiritualName = TextEditingController();
+  final _firstName = TextEditingController();
+  final _lastName = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _confirm = TextEditingController();
-  final _phone = PhoneController();
 
-  String _language = 'en';
   bool _agree = false;
   bool _showAgreeError = false;
   bool _busy = false;
@@ -43,12 +35,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   void dispose() {
-    _legalName.dispose();
-    _spiritualName.dispose();
+    _firstName.dispose();
+    _lastName.dispose();
     _email.dispose();
     _password.dispose();
     _confirm.dispose();
-    _phone.dispose();
     super.dispose();
   }
 
@@ -57,8 +48,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _showAgreeError = !_agree);
     if (!valid || !_agree) return;
 
-    final phone = _phone.value;
-    final country = phone.isoCode.name.toUpperCase();
     setState(() {
       _busy = true;
       _error = null;
@@ -67,12 +56,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       await _auth.signUp(SignUpData(
         email: _email.text,
         password: _password.text,
-        legalName: _legalName.text,
-        spiritualName: _spiritualName.text.trim().isEmpty ? null : _spiritualName.text,
-        phoneE164: phone.international,
-        countryIso: country,
-        currency: _currencyByCountry[country] ?? 'USD',
-        preferredLanguage: _language,
+        firstName: _firstName.text,
+        lastName: _lastName.text,
       ));
       if (mounted) setState(() => _registered = true);
     } on AuthProblem catch (e) {
@@ -126,41 +111,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
             subtitle: 'Join thousands of learners on their musical journey',
           ),
           if (_error != null) ...[NoticeBanner(_error!), const SizedBox(height: 16)],
-          Text('Preferred language', style: nunito(14, 600, color: Brand.gray700)),
-          RadioGroup<String>(
-            groupValue: _language,
-            onChanged: (v) => setState(() => _language = v ?? 'en'),
-            child: Wrap(
-              spacing: 8,
-              children: const [
-                _LangRadio('en', 'English'),
-                _LangRadio('es', 'Español'),
-                _LangRadio('pt', 'Português'),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
           TextFormField(
-            controller: _legalName,
+            controller: _firstName,
             textInputAction: TextInputAction.next,
-            validator: (v) => (v == null || v.trim().isEmpty) ? 'Legal name is required' : null,
-            decoration: const InputDecoration(labelText: 'Legal name'),
+            textCapitalization: TextCapitalization.words,
+            autofillHints: const [AutofillHints.givenName],
+            validator: (v) => (v == null || v.trim().isEmpty) ? 'First name is required' : null,
+            decoration: const InputDecoration(labelText: 'First name'),
           ),
           const SizedBox(height: 16),
           TextFormField(
-            controller: _spiritualName,
+            controller: _lastName,
             textInputAction: TextInputAction.next,
-            decoration: const InputDecoration(labelText: 'Spiritual name (optional)'),
-          ),
-          const SizedBox(height: 16),
-          PhoneFormField(
-            controller: _phone,
-            validator: PhoneValidator.compose([
-              PhoneValidator.required(context, errorText: 'Whatsapp number is required'),
-              PhoneValidator.valid(context, errorText: 'Whatsapp number is invalid'),
-            ]),
-            countrySelectorNavigator: const CountrySelectorNavigator.dialog(),
-            decoration: const InputDecoration(labelText: 'Whatsapp number'),
+            textCapitalization: TextCapitalization.words,
+            autofillHints: const [AutofillHints.familyName],
+            validator: (v) => (v == null || v.trim().isEmpty) ? 'Last name is required' : null,
+            decoration: const InputDecoration(labelText: 'Last name'),
           ),
           const SizedBox(height: 16),
           TextFormField(
@@ -199,9 +165,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   child: Wrap(
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      Text('I agree to the ', style: nunito(13, 400, color: Brand.gray700)),
+                      Text('I agree to the ', style: nunito(13, 400, color: Brand.textSecondary)),
                       _Link('Terms & Conditions', 'https://www.vasisstudio.com/terms'),
-                      Text(' and ', style: nunito(13, 400, color: Brand.gray700)),
+                      Text(' and ', style: nunito(13, 400, color: Brand.textSecondary)),
                       _Link('Privacy Policy', 'https://www.vasisstudio.com/privacy'),
                     ],
                   ),
@@ -226,33 +192,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
             alignment: WrapAlignment.center,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Text('Already have an account? ', style: nunito(14, 400, color: Brand.gray600)),
+              Text('Already have an account? ', style: nunito(14, 400, color: Brand.textMuted)),
               GestureDetector(
                 onTap: () => Navigator.pop(context),
-                child: Text('Sign in', style: nunito(14, 700, color: Brand.purpleLight)),
+                child: Text('Sign in', style: nunito(14, 700, color: Brand.cyan)),
               ),
             ],
           ),
         ],
       ),
-    );
-  }
-}
-
-class _LangRadio extends StatelessWidget {
-  final String value;
-  final String label;
-  const _LangRadio(this.value, this.label);
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Radio<String>(value: value),
-        Text(label, style: nunito(14, 500, color: Brand.gray700)),
-        const SizedBox(width: 8),
-      ],
     );
   }
 }
@@ -266,7 +214,7 @@ class _Link extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
-      child: Text(text, style: nunito(13, 700, color: Brand.purpleLight)),
+      child: Text(text, style: nunito(13, 700, color: Brand.cyan)),
     );
   }
 }

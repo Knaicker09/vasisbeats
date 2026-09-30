@@ -3,7 +3,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../app_nav.dart';
 import '../platform_support.dart';
+import '../services/beats_profile_service.dart';
 import '../services/connectivity_service.dart';
+import '../services/offline_cache_service.dart';
 import '../ui/brand.dart';
 import '../ui/widgets.dart';
 import 'home_screen.dart';
@@ -25,10 +27,10 @@ const _tabs = [
   _Tab('Profile', Icons.person_outline, Icons.person),
 ];
 
-/// The signed-in app frame, laid out like the website's student portal:
-/// a hover-expanding navy sidebar on wide screens; on phones a navy top bar
-/// with the page title in orange and a navy bottom bar with an orange
-/// active pill. Pages sit on the piano-keys background.
+/// The signed-in app frame: a hover-expanding glass sidebar on wide
+/// screens; on phones a glass top bar with the brand mark and page title
+/// and a bottom bar whose active tab glows cyan. Pages sit on the neon
+/// background.
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
 
@@ -42,6 +44,15 @@ class _MainShellState extends State<MainShell> {
   void initState() {
     super.initState();
     ConnectivityService.instance.start();
+    _refreshInBackground();
+  }
+
+  /// Every sign-in / app start: mirror the catalog and the user's data and
+  /// start downloading their tracks in the background (native only; a
+  /// no-op on web).
+  Future<void> _refreshInBackground() async {
+    final profile = await BeatsProfileService().fetchCurrentProfile();
+    if (profile != null) await OfflineCacheService().refreshAll(profile.studentId);
   }
 
   @override
@@ -54,12 +65,12 @@ class _MainShellState extends State<MainShell> {
           final wide = constraints.maxWidth >= kWideBreakpoint;
           if (wide) {
             return Scaffold(
-              backgroundColor: Brand.navy,
+              backgroundColor: Brand.bg,
               body: Row(
                 children: [
                   _Sidebar(index: index),
                   Expanded(
-                    child: PortalBackground(
+                    child: NeonBackground(
                       child: Column(
                         children: [
                           const _OfflineBanner(),
@@ -73,12 +84,12 @@ class _MainShellState extends State<MainShell> {
             );
           }
           return Scaffold(
-            backgroundColor: Brand.navy,
+            backgroundColor: Brand.bg,
             body: Column(
               children: [
                 _TopBar(title: _tabs[index].label),
                 Expanded(
-                  child: PortalBackground(
+                  child: NeonBackground(
                     child: Column(
                       children: [
                         const _OfflineBanner(),
@@ -124,7 +135,10 @@ class _OfflineBanner extends StatelessWidget {
         if (online) return const SizedBox.shrink();
         return Container(
           width: double.infinity,
-          color: Brand.warningBg,
+          decoration: BoxDecoration(
+            color: Brand.warning.withValues(alpha: 0.12),
+            border: Border(bottom: BorderSide(color: Brand.warning.withValues(alpha: 0.4))),
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -134,7 +148,7 @@ class _OfflineBanner extends StatelessWidget {
               Flexible(
                 child: Text(
                   "You're offline — showing your saved content.",
-                  style: nunito(13, 600, color: const Color(0xFF92400E)),
+                  style: nunito(13, 700, color: Brand.warningText),
                 ),
               ),
             ],
@@ -154,19 +168,19 @@ class _TopBar extends StatelessWidget {
     return Container(
       decoration: const BoxDecoration(
         gradient: Brand.chromeGradient,
-        border: Border(bottom: BorderSide(color: Color(0x4DDC2626))),
+        border: Border(bottom: BorderSide(color: Brand.border)),
       ),
       child: SafeArea(
         bottom: false,
         child: SizedBox(
-          height: 64,
+          height: 60,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                Image.asset('images/logo.png', height: 44),
+                const BrandMark(size: 30),
                 const Spacer(),
-                Text(title, style: nunito(18, 600, color: Brand.orange)),
+                Text(title.toUpperCase(), style: sora(13, 700, color: Brand.textSecondary, spacing: 1.6)),
               ],
             ),
           ),
@@ -185,7 +199,7 @@ class _BottomBar extends StatelessWidget {
     return Container(
       decoration: const BoxDecoration(
         gradient: Brand.chromeGradient,
-        border: Border(top: BorderSide(color: Color(0x4DDC2626))),
+        border: Border(top: BorderSide(color: Brand.border)),
       ),
       child: SafeArea(
         top: false,
@@ -227,9 +241,12 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? Colors.white : Brand.gray300;
+    final color = selected ? Brand.cyanBright : Brand.textMuted;
     final icon = Icon(selected ? tab.selectedIcon : tab.icon, color: color, size: 24);
-    final label = Text(tab.label, style: nunito(vertical ? 12 : 14, 600, color: color));
+    final label = Text(
+      vertical ? tab.label.toUpperCase() : tab.label,
+      style: vertical ? sora(10, 700, color: color, spacing: 1) : sora(14, 600, color: color),
+    );
 
     return Semantics(
       button: true,
@@ -238,15 +255,19 @@ class _NavItem extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(Brand.radius),
-        child: Container(
-          padding: EdgeInsets.symmetric(vertical: vertical ? 6 : 12, horizontal: vertical ? 4 : 16),
-          margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+          padding: EdgeInsets.symmetric(vertical: vertical ? 7 : 12, horizontal: vertical ? 4 : 16),
+          margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
           decoration: BoxDecoration(
-            color: selected ? Brand.orange : Colors.transparent,
+            color: selected ? Brand.cyan.withValues(alpha: 0.12) : Colors.transparent,
             borderRadius: BorderRadius.circular(Brand.radius),
+            border: Border.all(color: selected ? Brand.cyan.withValues(alpha: 0.7) : Colors.transparent),
+            boxShadow: selected ? Brand.glow(Brand.cyan, 0.45) : null,
           ),
           child: vertical
-              ? Column(mainAxisSize: MainAxisSize.min, children: [icon, const SizedBox(height: 2), label])
+              ? Column(mainAxisSize: MainAxisSize.min, children: [icon, const SizedBox(height: 3), label])
               : Row(
                   children: [
                     icon,
@@ -259,8 +280,7 @@ class _NavItem extends StatelessWidget {
   }
 }
 
-/// Wide-screen sidebar: 80px rail that expands to 256px on hover, like the
-/// website's.
+/// Wide-screen sidebar: 80px rail that expands to 256px on hover.
 class _Sidebar extends StatefulWidget {
   final int index;
   const _Sidebar({required this.index});
@@ -281,30 +301,21 @@ class _SidebarState extends State<_Sidebar> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
         width: _expanded ? 256 : 80,
-        decoration: const BoxDecoration(gradient: Brand.chromeGradient),
+        decoration: const BoxDecoration(
+          gradient: Brand.chromeGradient,
+          border: Border(right: BorderSide(color: Brand.border)),
+        ),
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 Center(
-                  child: Image.asset(
-                    'images/logo.png',
-                    width: _expanded ? 128 : 56,
-                    height: _expanded ? 72 : 48,
-                    fit: BoxFit.contain,
-                  ),
+                  child: FittedBox(child: BrandMark(size: 40, showWordmark: _expanded)),
                 ),
-                if (!_expanded)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text('MENU',
-                        textAlign: TextAlign.center,
-                        style: nunito(11, 700, color: Brand.orange, spacing: 1)),
-                  ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 28),
                 for (var i = 0; i < _tabs.length; i++)
                   _NavItem(
                     tab: _tabs[i],
@@ -315,12 +326,18 @@ class _SidebarState extends State<_Sidebar> {
                 const Spacer(),
                 Row(
                   children: [
-                    CircleAvatar(
-                      radius: 18,
-                      backgroundColor: Brand.orange,
+                    Container(
+                      width: 36,
+                      height: 36,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: Brand.primaryGradient,
+                        boxShadow: Brand.glow(Brand.blue, 0.5),
+                      ),
                       child: Text(
                         email.isEmpty ? '?' : email[0].toUpperCase(),
-                        style: nunito(15, 700, color: Colors.white),
+                        style: sora(15, 700, color: Colors.white),
                       ),
                     ),
                     if (_expanded) ...[
@@ -331,8 +348,8 @@ class _SidebarState extends State<_Sidebar> {
                           children: [
                             Text(email,
                                 overflow: TextOverflow.ellipsis,
-                                style: nunito(13, 500, color: Colors.white)),
-                            Text('Online', style: nunito(12, 400, color: Brand.orange)),
+                                style: nunito(13, 600, color: Brand.text)),
+                            Text('Online', style: nunito(12, 600, color: Brand.green)),
                           ],
                         ),
                       ),

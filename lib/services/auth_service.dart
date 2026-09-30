@@ -5,28 +5,23 @@ import 'welcome_email.dart';
 
 const String _websiteOrigin = 'https://www.vasisstudio.com';
 
-/// What the registration form collects — the same fields as the website's
-/// RegisterForm.
+/// What the registration form collects. Narrower than the website's form:
+/// first and last name only (saved together as the legal name, no spiritual
+/// name), no phone number, and English as the language.
 class SignUpData {
   final String email;
   final String password;
-  final String legalName;
-  final String? spiritualName;
-  final String? phoneE164;
-  final String? countryIso;
-  final String? currency;
-  final String preferredLanguage; // 'en' | 'es' | 'pt'
+  final String firstName;
+  final String lastName;
 
   const SignUpData({
     required this.email,
     required this.password,
-    required this.legalName,
-    this.spiritualName,
-    this.phoneE164,
-    this.countryIso,
-    this.currency,
-    this.preferredLanguage = 'en',
+    required this.firstName,
+    required this.lastName,
   });
+
+  String get legalName => '${firstName.trim()} ${lastName.trim()}'.trim();
 }
 
 /// Why a login/registration step failed, in terms the UI can act on.
@@ -34,7 +29,6 @@ enum AuthFailure {
   emailNotConfirmed,
   invalidCredentials,
   emailAlreadyRegistered,
-  whatsappAlreadyRegistered,
   noAccount,
   other,
 }
@@ -113,15 +107,13 @@ class AuthService {
 
   /// Registers an account and leaves the person needing to confirm their
   /// email with the 6-digit code (see [verifySignupCode]). Order matches the
-  /// website: contact-list sync first (its phone-number conflict blocks
-  /// registration), then signUp, then the welcome email (best effort).
+  /// website: contact-list sync, then signUp, then the welcome email (best
+  /// effort).
   Future<void> signUp(SignUpData data) async {
     final email = normalizeEmail(data.email);
-    final displayName = (data.spiritualName?.trim().isNotEmpty ?? false)
-        ? data.spiritualName!.trim()
-        : data.legalName.trim();
+    final displayName = data.legalName;
 
-    await _syncContact(data, email, displayName);
+    await _syncContact(email, displayName);
 
     try {
       final response = await _client.auth.signUp(
@@ -130,14 +122,14 @@ class AuthService {
         emailRedirectTo: '$_websiteOrigin/register/complete-profile?source=app',
         data: {
           'password_hash': 'app',
-          'initiated_name': data.spiritualName?.trim() ?? '',
-          'legal_name': data.legalName.trim(),
-          'phone_number': data.phoneE164,
-          'currency': data.currency,
+          'initiated_name': '',
+          'legal_name': data.legalName,
+          // No phone, so no country to derive a currency from: USD is the
+          // website's fallback for any country it doesn't price locally.
+          'currency': 'USD',
           'is_active': true,
           'email_verified': false,
-          'country': data.countryIso,
-          if (data.preferredLanguage.isNotEmpty) 'preferred_language': data.preferredLanguage,
+          'preferred_language': 'en',
         },
       );
       if (response.user?.id != null) {
@@ -229,30 +221,21 @@ class AuthService {
   // -- website integrations (best effort) ---------------------------------
 
   /// Adds the person to the marketing contact list the website uses
-  /// (`/api/brevo`, list 19). A phone number already on the list blocks
-  /// registration, as it does on the website; any other failure (offline,
-  /// outage) does not.
-  Future<void> _syncContact(SignUpData data, String email, String displayName) async {
+  /// (`/api/brevo`, list 19). Best effort — no phone number is collected,
+  /// so the website's duplicate-number conflict can't happen here, and a
+  /// failure (offline, outage) never blocks registration.
+  Future<void> _syncContact(String email, String displayName) async {
     try {
       await Dio().post(
         '$_websiteOrigin/api/brevo',
         data: {
           'email': email,
           'name': displayName,
-          'whatsapp': data.phoneE164,
-          'location': data.countryIso,
           'listId': 19,
           'source': 'app',
-          'language': data.preferredLanguage,
+          'language': 'en',
         },
       );
-    } on DioException catch (e) {
-      final body = e.response?.data;
-      final text = body is Map ? (body['error']?.toString() ?? '') : body?.toString() ?? '';
-      if (text.contains('Unable to update contact')) {
-        throw AuthProblem(AuthFailure.whatsappAlreadyRegistered,
-            'Whatsapp number already registered. Please use a different number.');
-      }
     } catch (_) {}
   }
 

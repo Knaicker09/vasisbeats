@@ -71,7 +71,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                   future: _students,
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator(color: Brand.orange));
+                      return const Center(child: CircularProgressIndicator(color: Brand.cyan));
                     }
                     if (snapshot.hasError) {
                       return const Center(
@@ -176,12 +176,12 @@ class _UserCardState extends State<_UserCard> {
               Expanded(
                 child: Text((name == null || name.isEmpty) ? email : name,
                     overflow: TextOverflow.ellipsis,
-                    style: nunito(17, 700, color: Brand.gray900)),
+                    style: nunito(17, 700, color: Brand.text)),
               ),
               if (role != 'student') StatusBadge(role, kind: BadgeKind.indigo),
             ],
           ),
-          Text(email, style: nunito(13, 400, color: Brand.gray500)),
+          Text(email, style: nunito(13, 400, color: Brand.textMuted)),
           const SizedBox(height: 12),
           Wrap(
             spacing: 12,

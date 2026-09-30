@@ -13,8 +13,9 @@ import '../ui/dialogs.dart';
 import '../ui/widgets.dart';
 
 /// Home tab: Start Practice, Continue Practice (restores the last set with
-/// its saved tempo/loop/timer/mix), recent and favourite sets, and offline
-/// status. Reads through OfflineCacheService, so on native it renders
+/// its saved tempo/loop/timer/mix), recent and favourite sets, progress of
+/// the background track download (with a retry if tracks failed), and
+/// offline status. Reads through OfflineCacheService, so on native it renders
 /// instantly from the saved catalog and works offline.
 class HomeView extends StatefulWidget {
   const HomeView({super.key});
@@ -25,23 +26,36 @@ class HomeView extends StatefulWidget {
 
 class _HomeViewState extends State<HomeView> {
   late Future<_HomeData> _future;
+  final _downloads = DownloadManager();
+  bool _syncRunning = false;
 
   @override
   void initState() {
     super.initState();
     _future = _load();
-    // Reload whenever the user comes back to this tab.
+    // Reload whenever the user comes back to this tab, and when a
+    // background download pass starts or ends (on first launch the catalog
+    // arrives just before the first pass starts).
     AppNav.tab.addListener(_onTabChanged);
+    _downloads.status.addListener(_onDownloadStatus);
   }
 
   @override
   void dispose() {
     AppNav.tab.removeListener(_onTabChanged);
+    _downloads.status.removeListener(_onDownloadStatus);
     super.dispose();
   }
 
   void _onTabChanged() {
     if (AppNav.tab.value == AppNav.home && mounted) setState(() => _future = _load());
+  }
+
+  void _onDownloadStatus() {
+    final running = _downloads.status.value.running;
+    if (running == _syncRunning) return;
+    _syncRunning = running;
+    if (mounted) setState(() => _future = _load());
   }
 
   Future<_HomeData> _load() async {
@@ -65,8 +79,6 @@ class _HomeViewState extends State<HomeView> {
       if (recentIds.length == 3) break;
     }
 
-    final downloaded = offlineSupported ? (await DownloadManager().getDownloadedTracks()).length : 0;
-
     return _HomeData(
       name: profile?.displayName ?? 'there',
       isPaid: profile?.isPaid ?? false,
@@ -75,7 +87,6 @@ class _HomeViewState extends State<HomeView> {
       recent: recentIds.map(byId).whereType<Map<String, dynamic>>().toList(),
       favorites: sets.where((s) => favoriteIds.contains(s['id'])).toList(),
       catalogEmpty: sets.isEmpty,
-      downloadedTracks: downloaded,
     );
   }
 
@@ -110,7 +121,7 @@ class _HomeViewState extends State<HomeView> {
       future: _future,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator(color: Brand.orange));
+          return const Center(child: CircularProgressIndicator(color: Brand.cyan));
         }
         if (snapshot.hasError) {
           return PortalScroll(
@@ -120,6 +131,7 @@ class _HomeViewState extends State<HomeView> {
               GlassTile(
                 title: 'Something went wrong',
                 icon: Icons.error_outline,
+                iconColor: Brand.red,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -145,24 +157,28 @@ class _HomeViewState extends State<HomeView> {
           children: [
             LayoutBuilder(builder: (context, c) {
               if (c.maxWidth >= kWideBreakpoint) return const SizedBox.shrink();
-              return Text('Welcome back, ${d.name}!',
-                  style: nunito(18, 600, color: const Color(0xFFE5E7EB)));
+              return GradientText('Welcome back, ${d.name}!', style: sora(22, 800, spacing: -0.3));
             }),
             GlassTile(
               title: 'Start practice',
               icon: Icons.play_arrow,
-              iconColor: Brand.purple,
+              iconColor: Brand.cyan,
               child: GradientButton(
                 label: 'Start Practice',
                 icon: Icons.music_note,
                 onPressed: () => AppNav.goTo(AppNav.practice),
               ),
             ),
+            if (offlineSupported)
+              ValueListenableBuilder<DownloadSyncStatus>(
+                valueListenable: _downloads.status,
+                builder: (context, status, _) => _DownloadStatusTile(status: status),
+              ),
             if (d.continueSet != null)
               GlassTile(
                 title: 'Continue practice',
                 icon: Icons.history,
-                iconColor: Colors.blue,
+                iconColor: Brand.blue,
                 child: _SetRow(
                   set: d.continueSet!,
                   subtitle: _summary(d.continueSettings),
@@ -173,7 +189,7 @@ class _HomeViewState extends State<HomeView> {
             GlassTile(
               title: 'Favorites',
               icon: Icons.star_outline,
-              iconColor: Colors.amber,
+              iconColor: Brand.amber,
               child: d.favorites.isEmpty
                   ? const Text('No favorites yet — tap the star on a practice set to add one.')
                   : Column(
@@ -191,7 +207,7 @@ class _HomeViewState extends State<HomeView> {
               GlassTile(
                 title: 'Recent practice',
                 icon: Icons.schedule,
-                iconColor: Colors.green,
+                iconColor: Brand.green,
                 child: Column(
                   children: [
                     for (final s in d.recent)
@@ -206,17 +222,21 @@ class _HomeViewState extends State<HomeView> {
             if (offlineSupported)
               ValueListenableBuilder<bool>(
                 valueListenable: ConnectivityService.instance.online,
-                builder: (context, online, _) => GlassTile(
-                  title: 'Offline status',
-                  icon: online ? Icons.cloud_done_outlined : Icons.cloud_off,
-                  iconColor: online ? Colors.green : Brand.warning,
-                  child: Text(
-                    online
-                        ? 'Online · ${d.downloadedTracks} '
-                            'track${d.downloadedTracks == 1 ? '' : 's'} saved on this device'
-                        : 'Offline · ${d.downloadedTracks} '
-                            'track${d.downloadedTracks == 1 ? '' : 's'} available to play',
-                  ),
+                builder: (context, online, _) => ValueListenableBuilder<DownloadSyncStatus>(
+                  valueListenable: _downloads.status,
+                  builder: (context, status, _) {
+                    final n = status.complete;
+                    return GlassTile(
+                      title: 'Offline status',
+                      icon: online ? Icons.cloud_done_outlined : Icons.cloud_off,
+                      iconColor: online ? Brand.green : Brand.warning,
+                      child: Text(
+                        online
+                            ? 'Online · $n track${n == 1 ? '' : 's'} saved on this device'
+                            : 'Offline · $n track${n == 1 ? '' : 's'} available to play',
+                      ),
+                    );
+                  },
                 ),
               ),
             if (d.catalogEmpty)
@@ -229,6 +249,61 @@ class _HomeViewState extends State<HomeView> {
         );
       },
     );
+  }
+}
+
+/// Background track download: progress while it runs, and a retry when
+/// tracks failed even after the automatic retries. Hidden once everything
+/// is on the device.
+class _DownloadStatusTile extends StatelessWidget {
+  final DownloadSyncStatus status;
+  const _DownloadStatusTile({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = status;
+    if (s.running && s.complete < s.total) {
+      return GlassTile(
+        title: 'Downloading tracks',
+        icon: Icons.downloading,
+        iconColor: Brand.blue,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${s.complete} of ${s.total} tracks saved for offline practice. '
+                'You can keep using the app meanwhile.'),
+            const SizedBox(height: 10),
+            LinearProgressIndicator(
+              value: s.total == 0 ? null : s.complete / s.total,
+              color: Brand.cyan,
+              backgroundColor: Brand.border,
+            ),
+          ],
+        ),
+      );
+    }
+    if (!s.running && s.failed > 0) {
+      return GlassTile(
+        title: 'Some tracks did not download',
+        icon: Icons.error_outline,
+        iconColor: Brand.warning,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${s.failed} track${s.failed == 1 ? '' : 's'} could not be downloaded. '
+                'Check your connection and try again.'),
+            const SizedBox(height: 12),
+            GradientButton(
+              label: 'Try again',
+              icon: Icons.refresh,
+              expanded: false,
+              onPressed: () => DownloadManager().syncAll(userInitiated: true),
+            ),
+          ],
+        ),
+      );
+    }
+    return const SizedBox.shrink();
   }
 }
 
@@ -250,10 +325,14 @@ class _SetRow extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 36,
-              height: 36,
-              decoration: const BoxDecoration(color: Brand.purple, shape: BoxShape.circle),
-              child: const Icon(Icons.music_note, size: 18, color: Colors.white),
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: Brand.cyan.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Brand.cyan.withValues(alpha: 0.7)),
+              ),
+              child: const Icon(Icons.graphic_eq_rounded, size: 20, color: Brand.cyan),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -261,16 +340,16 @@ class _SetRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(set['title'] as String? ?? '',
-                      style: nunito(15, 600, color: Colors.white)),
+                      style: sora(14, 700, color: Brand.text)),
                   if (subtitle != null)
-                    Text(subtitle!, style: nunito(13, 400, color: const Color(0xFFE5E7EB))),
+                    Text(subtitle!, style: nunito(13, 400, color: Brand.textSecondary)),
                 ],
               ),
             ),
             if (locked)
               const StatusBadge('Supporters', kind: BadgeKind.amber, icon: Icons.lock_outline)
             else
-              const Icon(Icons.chevron_right, color: Colors.white70),
+              const Icon(Icons.chevron_right, color: Brand.textMuted),
           ],
         ),
       ),
@@ -286,7 +365,6 @@ class _HomeData {
   final List<Map<String, dynamic>> recent;
   final List<Map<String, dynamic>> favorites;
   final bool catalogEmpty;
-  final int downloadedTracks;
 
   _HomeData({
     required this.name,
@@ -296,6 +374,5 @@ class _HomeData {
     required this.recent,
     required this.favorites,
     required this.catalogEmpty,
-    required this.downloadedTracks,
   });
 }
