@@ -39,15 +39,30 @@ clones a pinned Flutter SDK version (matching local/device builds) before
 building. That adds a couple of minutes to each build; there's no Flutter-
 specific build cache configured yet.
 
-## Manual / CLI deploy (optional, `wrangler.toml`)
+**No `wrangler.toml` on purpose.** An earlier version of this repo had
+one (just `pages_build_output_dir`, for optional local `wrangler` CLI
+use). Cloudflare Pages has a beta "Wrangler configuration file" build
+path that activates whenever that file is present, and it does not pass
+dashboard-configured environment variables into the build step — the
+build log shows `Build environment variables: (none found)` even with
+`SUPABASE_URL`/`SUPABASE_ANON_KEY` correctly set in Settings. This is a
+reported Cloudflare bug, not a config mistake. Don't re-add a
+`wrangler.toml` with `pages_build_output_dir` to this repo unless that's
+fixed upstream — the dashboard's own Build configuration panel (command/
+output dir/root, set manually per the steps above) is what actually
+drives the Git-integration build.
+
+## Manual / CLI deploy (optional)
 
 ```
 flutter build web --release
-npx wrangler pages deploy build/web --project-name=vasis-beats-web
+npx wrangler pages deploy build/web --project-name=<your-pages-project-name>
 ```
 
 Requires `npx wrangler login` (or a `CLOUDFLARE_API_TOKEN`) once, done
-locally by whoever runs it — not set up in this repo.
+locally by whoever runs it — not set up in this repo. The output
+directory is passed on the command line rather than via `wrangler.toml`
+for the reason above.
 
 ## Domain
 
